@@ -14,6 +14,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [selectedAgent, setSelectedAgent] = useState(null)
+  const [debugInfo, setDebugInfo] = useState('')
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
   const categories = ['Yurtdışı', 'Yurtiçi']
@@ -22,57 +23,159 @@ const Dashboard = () => {
     fetchData()
   }, [])
 
+  const testConnection = async () => {
+    try {
+      console.log('Testing Supabase connection...')
+      const { data, error } = await supabase.from('agents').select('count').limit(1)
+      
+      if (error) {
+        console.error('Connection test failed:', error)
+        return false
+      }
+      
+      console.log('Connection test successful:', data)
+      return true
+    } catch (error) {
+      console.error('Connection test error:', error)
+      return false
+    }
+  }
+
+  const createSampleData = async () => {
+    try {
+      console.log('Creating sample data...')
+      
+      // First, check if agents exist
+      const { data: existingAgents } = await supabase
+        .from('agents')
+        .select('*')
+        .limit(1)
+
+      if (existingAgents && existingAgents.length > 0) {
+        console.log('Agents already exist, skipping creation')
+        return
+      }
+
+      // Create sample agents
+      const sampleAgents = [
+        { name: 'Adviye', category: 'Yurtdışı', email: 'adviye@test.com', active: true },
+        { name: 'Cengiz', category: 'Yurtdışı', email: 'cengiz@test.com', active: true },
+        { name: 'Dilara', category: 'Yurtdışı', email: 'dilara@test.com', active: true },
+        { name: 'Çiğdem', category: 'Yurtiçi', email: 'cigdem@test.com', active: true },
+        { name: 'Hande', category: 'Yurtiçi', email: 'hande@test.com', active: true },
+      ]
+
+      const { data: insertedAgents, error: agentError } = await supabase
+        .from('agents')
+        .insert(sampleAgents)
+        .select()
+
+      if (agentError) {
+        console.error('Error creating agents:', agentError)
+        return
+      }
+
+      console.log('Sample agents created:', insertedAgents)
+
+      // Create sample reports
+      const sampleReports = insertedAgents.map(agent => ({
+        agent_id: agent.id,
+        date: '2024-05-01',
+        month: 'Mayıs',
+        week: 1,
+        incoming_data: Math.floor(Math.random() * 500) + 100,
+        contacted: Math.floor(Math.random() * 200) + 50,
+        unreachable: Math.floor(Math.random() * 50) + 10,
+        no_answer: Math.floor(Math.random() * 100) + 20,
+        rejected: Math.floor(Math.random() * 30) + 5,
+        negative: Math.floor(Math.random() * 20) + 2,
+        appointments: Math.floor(Math.random() * 50) + 5,
+      }))
+
+      const { data: insertedReports, error: reportError } = await supabase
+        .from('reports')
+        .insert(sampleReports)
+        .select()
+
+      if (reportError) {
+        console.error('Error creating reports:', reportError)
+        return
+      }
+
+      console.log('Sample reports created:', insertedReports)
+      
+    } catch (error) {
+      console.error('Error creating sample data:', error)
+    }
+  }
+
   const fetchData = async () => {
     try {
       setLoading(true)
       setError(null)
+      setDebugInfo('Bağlantı test ediliyor...')
       
-      console.log('Fetching data...')
-      
-      // Test database connection first
-      const { data: testData, error: testError } = await supabase
-        .from('agents')
-        .select('count')
-        .limit(1)
-
-      if (testError) {
-        console.error('Database connection test failed:', testError)
+      // Test connection first
+      const connectionOk = await testConnection()
+      if (!connectionOk) {
         setError('Veritabanı bağlantısı kurulamadı')
         setLoading(false)
         return
       }
 
-      console.log('Database connection successful')
-
-      // Fetch agents with simplified query
+      setDebugInfo('Agentler getiriliyor...')
+      
+      // Fetch agents
       const { data: agentsData, error: agentsError } = await supabase
         .from('agents')
         .select('*')
+        .order('name')
 
       if (agentsError) {
         console.error('Error fetching agents:', agentsError)
-        setError('Agentler yüklenirken hata oluştu: ' + agentsError.message)
-      } else {
-        console.log('Agents fetched:', agentsData?.length || 0)
-        setAgents(agentsData || [])
+        setError('Agentler yüklenirken hata: ' + agentsError.message)
+        setLoading(false)
+        return
       }
 
-      // Fetch reports with simplified query
+      console.log('Agents fetched:', agentsData?.length || 0, agentsData)
+      setAgents(agentsData || [])
+
+      // If no agents, try to create sample data
+      if (!agentsData || agentsData.length === 0) {
+        setDebugInfo('Örnek veri oluşturuluyor...')
+        await createSampleData()
+        
+        // Retry fetching agents
+        const { data: newAgentsData } = await supabase
+          .from('agents')
+          .select('*')
+          .order('name')
+        
+        setAgents(newAgentsData || [])
+      }
+
+      setDebugInfo('Raporlar getiriliyor...')
+
+      // Fetch reports
       const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
         .select('*')
+        .order('date', { ascending: false })
 
       if (reportsError) {
         console.error('Error fetching reports:', reportsError)
-        setError('Raporlar yüklenirken hata oluştu: ' + reportsError.message)
+        setError('Raporlar yüklenirken hata: ' + reportsError.message)
       } else {
-        console.log('Reports fetched:', reportsData?.length || 0)
+        console.log('Reports fetched:', reportsData?.length || 0, reportsData)
         setReports(reportsData || [])
       }
 
+      setDebugInfo(`Yükleme tamamlandı: ${agentsData?.length || 0} agent, ${reportsData?.length || 0} rapor`)
+
     } catch (error) {
       console.error('Error in fetchData:', error)
-      setError('Beklenmeyen bir hata oluştu: ' + error.message)
+      setError('Beklenmeyen hata: ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -83,20 +186,23 @@ const Dashboard = () => {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
-            <p className="text-secondary-600">Veriler yükleniyor...</p>
-            <Button 
-              onClick={fetchData} 
-              variant="outline" 
-              size="sm" 
-              className="mt-4"
-            >
-              Yeniden Dene
-            </Button>
-          </div>
-        </div>
+        <Card>
+          <Card.Content>
+            <div className="text-center py-8">
+              <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
+              <p className="text-secondary-600 mb-2">Veriler yükleniyor...</p>
+              <p className="text-sm text-secondary-500">{debugInfo}</p>
+              <Button 
+                onClick={fetchData} 
+                variant="outline" 
+                size="sm" 
+                className="mt-4"
+              >
+                Yeniden Dene
+              </Button>
+            </div>
+          </Card.Content>
+        </Card>
       </div>
     )
   }
@@ -111,10 +217,17 @@ const Dashboard = () => {
             <div className="text-center py-8">
               <i className="bi bi-exclamation-triangle text-4xl text-warning-600 mb-4"></i>
               <p className="text-secondary-600 mb-4">{error}</p>
-              <Button onClick={fetchData}>
-                <i className="bi bi-arrow-clockwise mr-2"></i>
-                Tekrar Dene
-              </Button>
+              <p className="text-sm text-secondary-500 mb-4">{debugInfo}</p>
+              <div className="space-x-2">
+                <Button onClick={fetchData}>
+                  <i className="bi bi-arrow-clockwise mr-2"></i>
+                  Tekrar Dene
+                </Button>
+                <Button onClick={createSampleData} variant="secondary">
+                  <i className="bi bi-plus mr-2"></i>
+                  Örnek Veri Oluştur
+                </Button>
+              </div>
             </div>
           </Card.Content>
         </Card>
@@ -131,14 +244,20 @@ const Dashboard = () => {
           <Card.Content>
             <div className="text-center py-8">
               <i className="bi bi-inbox text-4xl text-secondary-400 mb-4"></i>
-              <p className="text-secondary-600 mb-4">Henüz agent verisi bulunmuyor</p>
+              <p className="text-secondary-600 mb-2">Henüz agent verisi bulunmuyor</p>
               <p className="text-sm text-secondary-500 mb-4">
                 Agents: {agents.length}, Reports: {reports.length}
               </p>
-              <Button onClick={fetchData}>
-                <i className="bi bi-arrow-clockwise mr-2"></i>
-                Verileri Yenile
-              </Button>
+              <div className="space-x-2">
+                <Button onClick={fetchData}>
+                  <i className="bi bi-arrow-clockwise mr-2"></i>
+                  Verileri Yenile
+                </Button>
+                <Button onClick={createSampleData} variant="secondary">
+                  <i className="bi bi-plus mr-2"></i>
+                  Örnek Veri Oluştur
+                </Button>
+              </div>
             </div>
           </Card.Content>
         </Card>
@@ -235,6 +354,9 @@ const Dashboard = () => {
           <p className="text-sm text-secondary-600">
             {agents.length} agent, {reports.length} rapor
           </p>
+          {debugInfo && (
+            <p className="text-xs text-secondary-500">{debugInfo}</p>
+          )}
         </div>
         
         <div className="flex flex-wrap gap-2">
