@@ -4,7 +4,7 @@ import Card from '../ui/Card.jsx'
 import Table from '../ui/Table.jsx'
 import Button from '../ui/Button.jsx'
 import AgentProfile from '../agents/AgentProfile.jsx'
-import DataVerification from './DataVerification.jsx'
+import DatabaseDiagnostics from './DatabaseDiagnostics.jsx'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts'
 
 const Dashboard = () => {
@@ -16,7 +16,12 @@ const Dashboard = () => {
   const [error, setError] = useState(null)
   const [selectedAgent, setSelectedAgent] = useState(null)
   const [debugInfo, setDebugInfo] = useState('')
-  const [showVerification, setShowVerification] = useState(false)
+  const [showDiagnostics, setShowDiagnostics] = useState(false)
+  const [dataStatus, setDataStatus] = useState({
+    agents: 0,
+    reports: 0,
+    lastUpdate: null
+  })
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
   const categories = ['Yurtdışı', 'Yurtiçi']
@@ -31,30 +36,40 @@ const Dashboard = () => {
       setError(null)
       setDebugInfo('Bağlantı test ediliyor...')
       
-      // Test basic connection first
-      const { data: connectionTest, error: connectionError } = await supabase
-        .from('agents')
-        .select('count')
-        .limit(1)
-
-      if (connectionError) {
-        console.error('Connection test failed:', connectionError)
-        setError(`Veritabanı bağlantı hatası: ${connectionError.message}`)
-        setDebugInfo('Bağlantı başarısız')
-        setShowVerification(true)
+      // Enhanced connection test
+      const connectionTest = await testConnection()
+      if (!connectionTest.success) {
+        setError(`Bağlantı hatası: ${connectionTest.error}`)
+        setShowDiagnostics(true)
         setLoading(false)
         return
       }
 
-      setDebugInfo('Bağlantı başarılı, veriler yükleniyor...')
+      setDebugInfo('Veriler yükleniyor...')
       await loadData()
       
     } catch (error) {
       console.error('Dashboard initialization error:', error)
       setError(`Başlatma hatası: ${error.message}`)
-      setDebugInfo('Dashboard başlatılamadı')
-      setShowVerification(true)
+      setShowDiagnostics(true)
       setLoading(false)
+    }
+  }
+
+  const testConnection = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('agents')
+        .select('count')
+        .limit(1)
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, data }
+    } catch (error) {
+      return { success: false, error: error.message }
     }
   }
 
@@ -62,10 +77,10 @@ const Dashboard = () => {
     try {
       setDebugInfo('Agentler getiriliyor...')
       
-      // Fetch agents with better error handling
-      const { data: agentsData, error: agentsError } = await supabase
+      // Load agents with detailed error handling
+      const { data: agentsData, error: agentsError, count: agentsCount } = await supabase
         .from('agents')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('name')
 
       if (agentsError) {
@@ -73,15 +88,15 @@ const Dashboard = () => {
         throw new Error(`Agentler yüklenirken hata: ${agentsError.message}`)
       }
 
-      console.log('Agents loaded:', agentsData?.length || 0)
+      console.log('Agents loaded:', agentsCount, agentsData)
       setAgents(agentsData || [])
 
       setDebugInfo('Raporlar getiriliyor...')
 
-      // Fetch reports with better error handling
-      const { data: reportsData, error: reportsError } = await supabase
+      // Load reports with detailed error handling
+      const { data: reportsData, error: reportsError, count: reportsCount } = await supabase
         .from('reports')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('date', { ascending: false })
 
       if (reportsError) {
@@ -89,24 +104,31 @@ const Dashboard = () => {
         throw new Error(`Raporlar yüklenirken hata: ${reportsError.message}`)
       }
 
-      console.log('Reports loaded:', reportsData?.length || 0)
+      console.log('Reports loaded:', reportsCount, reportsData)
       setReports(reportsData || [])
 
-      setDebugInfo(`Yükleme tamamlandı: ${agentsData?.length || 0} agent, ${reportsData?.length || 0} rapor`)
-      setError(null)
-      setShowVerification(false)
+      // Update status
+      setDataStatus({
+        agents: agentsCount || 0,
+        reports: reportsCount || 0,
+        lastUpdate: new Date()
+      })
 
-      // Check if we have data, if not show verification
-      if (!agentsData?.length || !reportsData?.length) {
-        setShowVerification(true)
-        setError('Veri bulunamadı. Lütfen veritabanı durumunu kontrol edin.')
+      setDebugInfo(`Yükleme tamamlandı: ${agentsCount || 0} agent, ${reportsCount || 0} rapor`)
+      setError(null)
+      setShowDiagnostics(false)
+
+      // Check if we have sufficient data
+      if ((agentsCount || 0) === 0 || (reportsCount || 0) === 0) {
+        setShowDiagnostics(true)
+        setError('Yetersiz veri. Lütfen veritabanını kontrol edin.')
       }
 
     } catch (error) {
       console.error('Error loading data:', error)
       setError(error.message)
       setDebugInfo('Veri yükleme hatası')
-      setShowVerification(true)
+      setShowDiagnostics(true)
     } finally {
       setLoading(false)
     }
@@ -119,11 +141,12 @@ const Dashboard = () => {
   const forceRefresh = async () => {
     setAgents([])
     setReports([])
+    setDataStatus({ agents: 0, reports: 0, lastUpdate: null })
     await initializeDashboard()
   }
 
   const handleDataReady = () => {
-    setShowVerification(false)
+    setShowDiagnostics(false)
     initializeDashboard()
   }
 
@@ -138,6 +161,9 @@ const Dashboard = () => {
               <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
               <p className="text-secondary-600 mb-2">Veriler yükleniyor...</p>
               <p className="text-sm text-secondary-500">{debugInfo}</p>
+              <div className="mt-4 text-xs text-secondary-400">
+                Son durum: {dataStatus.agents} agent, {dataStatus.reports} rapor
+              </div>
             </div>
           </Card.Content>
         </Card>
@@ -145,8 +171,8 @@ const Dashboard = () => {
     )
   }
 
-  // Show verification/error state
-  if (error || showVerification) {
+  // Show diagnostics/error state
+  if (error || showDiagnostics) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
@@ -160,7 +186,10 @@ const Dashboard = () => {
                 <p className="text-secondary-600 mb-2">{error}</p>
                 <p className="text-sm text-secondary-500 mb-4">{debugInfo}</p>
                 <div className="text-xs text-secondary-400 mb-4">
-                  Agents: {agents.length} | Reports: {reports.length}
+                  Durum: {dataStatus.agents} agent, {dataStatus.reports} rapor
+                  {dataStatus.lastUpdate && (
+                    <span className="block">Son güncelleme: {dataStatus.lastUpdate.toLocaleTimeString()}</span>
+                  )}
                 </div>
                 <div className="space-x-2">
                   <Button onClick={handleRetry}>
@@ -171,13 +200,17 @@ const Dashboard = () => {
                     <i className="bi bi-arrow-repeat mr-2"></i>
                     Zorla Yenile
                   </Button>
+                  <Button onClick={() => setShowDiagnostics(true)} variant="outline">
+                    <i className="bi bi-tools mr-2"></i>
+                    Tanılama
+                  </Button>
                 </div>
               </div>
             </Card.Content>
           </Card>
         )}
 
-        <DataVerification onDataReady={handleDataReady} />
+        <DatabaseDiagnostics onDataReady={handleDataReady} />
       </div>
     )
   }
@@ -194,14 +227,14 @@ const Dashboard = () => {
               <h3 className="text-lg font-semibold text-secondary-900 mb-2">Veri Bulunamadı</h3>
               <p className="text-secondary-600 mb-2">Sistemde henüz agent verisi bulunmuyor</p>
               <p className="text-sm text-secondary-500 mb-4">
-                Agents: {agents.length} | Reports: {reports.length}
+                Durum: {dataStatus.agents} agent, {dataStatus.reports} rapor
               </p>
               <div className="space-x-2">
                 <Button onClick={handleRetry}>
                   <i className="bi bi-arrow-clockwise mr-2"></i>
                   Verileri Yenile
                 </Button>
-                <Button onClick={() => setShowVerification(true)} variant="secondary">
+                <Button onClick={() => setShowDiagnostics(true)} variant="secondary">
                   <i className="bi bi-tools mr-2"></i>
                   Veritabanını Kontrol Et
                 </Button>
@@ -301,12 +334,17 @@ const Dashboard = () => {
           <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
           <div className="flex items-center space-x-4">
             <p className="text-sm text-secondary-600">
-              {agents.length} agent, {reports.length} rapor
+              {dataStatus.agents} agent, {dataStatus.reports} rapor
             </p>
             <div className="flex items-center space-x-2">
               <div className="w-2 h-2 rounded-full bg-green-500"></div>
               <span className="text-xs text-secondary-500">Aktif</span>
             </div>
+            {dataStatus.lastUpdate && (
+              <span className="text-xs text-secondary-400">
+                {dataStatus.lastUpdate.toLocaleTimeString()}
+              </span>
+            )}
             <Button 
               onClick={forceRefresh} 
               variant="ghost" 
@@ -316,7 +354,7 @@ const Dashboard = () => {
               <i className="bi bi-arrow-clockwise"></i>
             </Button>
             <Button 
-              onClick={() => setShowVerification(true)} 
+              onClick={() => setShowDiagnostics(true)} 
               variant="ghost" 
               size="sm"
               title="Veritabanı durumunu kontrol et"
