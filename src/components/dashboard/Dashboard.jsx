@@ -16,6 +16,7 @@ const Dashboard = () => {
   const [selectedAgent, setSelectedAgent] = useState(null)
   const [debugInfo, setDebugInfo] = useState('')
   const [connectionStatus, setConnectionStatus] = useState('testing')
+  const [dataCreating, setDataCreating] = useState(false)
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
   const categories = ['Yurtdışı', 'Yurtiçi']
@@ -43,9 +44,9 @@ const Dashboard = () => {
       }
       
       setConnectionStatus('connected')
-      setDebugInfo('Bağlantı başarılı, veriler yükleniyor...')
+      setDebugInfo('Bağlantı başarılı, veriler kontrol ediliyor...')
       
-      await fetchData()
+      await checkAndLoadData()
       
     } catch (error) {
       console.error('Dashboard initialization error:', error)
@@ -55,87 +56,238 @@ const Dashboard = () => {
     }
   }
 
+  const checkAndLoadData = async () => {
+    try {
+      setDebugInfo('Mevcut veriler kontrol ediliyor...')
+      
+      // Check if we have any agents
+      const { data: existingAgents, error: agentsError } = await supabase
+        .from('agents')
+        .select('id, name, category')
+        .limit(5)
+
+      if (agentsError) {
+        console.error('Error checking agents:', agentsError)
+        throw new Error(`Agent kontrolü başarısız: ${agentsError.message}`)
+      }
+
+      console.log('Existing agents found:', existingAgents?.length || 0)
+
+      // Check if we have any reports
+      const { data: existingReports, error: reportsError } = await supabase
+        .from('reports')
+        .select('id, agent_id, month')
+        .limit(5)
+
+      if (reportsError) {
+        console.error('Error checking reports:', reportsError)
+        throw new Error(`Rapor kontrolü başarısız: ${reportsError.message}`)
+      }
+
+      console.log('Existing reports found:', existingReports?.length || 0)
+
+      if (!existingAgents || existingAgents.length === 0) {
+        setDebugInfo('Hiç agent bulunamadı, örnek veriler oluşturuluyor...')
+        await createSampleData()
+      } else if (!existingReports || existingReports.length === 0) {
+        setDebugInfo('Agentler mevcut ama raporlar yok, örnek raporlar oluşturuluyor...')
+        await createSampleReports(existingAgents)
+      } else {
+        setDebugInfo('Mevcut veriler yükleniyor...')
+        await fetchData()
+      }
+      
+    } catch (error) {
+      console.error('Error in checkAndLoadData:', error)
+      setError(error.message)
+      setLoading(false)
+    }
+  }
+
   const createSampleData = async () => {
     try {
-      setDebugInfo('Örnek veri oluşturuluyor...')
+      setDataCreating(true)
+      setDebugInfo('Örnek agentler oluşturuluyor...')
       
       // Create sample agents
       const sampleAgents = [
-        { name: 'Adviye', category: 'Yurtdışı', email: 'adviye@test.com', active: true },
-        { name: 'Cengiz', category: 'Yurtdışı', email: 'cengiz@test.com', active: true },
-        { name: 'Dilara', category: 'Yurtdışı', email: 'dilara@test.com', active: true },
-        { name: 'Jennifer', category: 'Yurtdışı', email: 'jennifer@test.com', active: true },
-        { name: 'Çiğdem', category: 'Yurtiçi', email: 'cigdem@test.com', active: true },
-        { name: 'Hande', category: 'Yurtiçi', email: 'hande@test.com', active: true },
-        { name: 'Hilal', category: 'Yurtiçi', email: 'hilal@test.com', active: true },
+        { name: 'Adviye', category: 'Yurtdışı', email: 'adviye@test.com', notes: 'Yurtdışı uzmanı', active: true },
+        { name: 'Cengiz Yurtdışı', category: 'Yurtdışı', email: 'cengiz.yurtdisi@test.com', notes: 'Avrupa sorumlusu', active: true },
+        { name: 'Dilara', category: 'Yurtdışı', email: 'dilara@test.com', notes: 'Amerika sorumlusu', active: true },
+        { name: 'Jennifer', category: 'Yurtdışı', email: 'jennifer@test.com', notes: 'İngilizce müşteriler', active: true },
+        { name: 'Merve', category: 'Yurtdışı', email: 'merve@test.com', notes: 'Orta Doğu sorumlusu', active: true },
+        { name: 'Çiğdem', category: 'Yurtiçi', email: 'cigdem@test.com', notes: 'İstanbul sorumlusu', active: true },
+        { name: 'Hande', category: 'Yurtiçi', email: 'hande@test.com', notes: 'Ankara sorumlusu', active: true },
+        { name: 'Hilal', category: 'Yurtiçi', email: 'hilal@test.com', notes: 'İzmir sorumlusu', active: true },
+        { name: 'Saliha', category: 'Yurtiçi', email: 'saliha@test.com', notes: 'Bursa sorumlusu', active: true },
       ]
 
-      const { data: insertedAgents, error: agentError } = await supabase
-        .from('agents')
-        .upsert(sampleAgents, { onConflict: 'name' })
-        .select()
+      // Insert agents one by one to avoid conflicts
+      const insertedAgents = []
+      for (const agent of sampleAgents) {
+        try {
+          const { data, error } = await supabase
+            .from('agents')
+            .insert([agent])
+            .select()
+            .single()
 
-      if (agentError) {
-        console.error('Error creating agents:', agentError)
-        throw agentError
+          if (error) {
+            console.error(`Error inserting agent ${agent.name}:`, error)
+            // Try to get existing agent
+            const { data: existing } = await supabase
+              .from('agents')
+              .select('*')
+              .eq('name', agent.name)
+              .eq('category', agent.category)
+              .single()
+            
+            if (existing) {
+              insertedAgents.push(existing)
+            }
+          } else {
+            insertedAgents.push(data)
+          }
+        } catch (err) {
+          console.error(`Error with agent ${agent.name}:`, err)
+        }
       }
 
-      console.log('Sample agents created:', insertedAgents)
+      console.log('Agents created/found:', insertedAgents.length)
+      setDebugInfo(`${insertedAgents.length} agent oluşturuldu/bulundu, raporlar oluşturuluyor...`)
 
-      // Create sample reports for each agent
+      await createSampleReports(insertedAgents)
+      
+    } catch (error) {
+      console.error('Error creating sample data:', error)
+      setError(`Örnek veri oluşturma hatası: ${error.message}`)
+      setLoading(false)
+    } finally {
+      setDataCreating(false)
+    }
+  }
+
+  const createSampleReports = async (agentsList) => {
+    try {
+      setDebugInfo('Örnek raporlar oluşturuluyor...')
+      
       const sampleReports = []
       
-      insertedAgents.forEach(agent => {
+      // Predefined data for specific agents
+      const agentData = {
+        'Adviye': {
+          'Mayıs': { incoming_data: 436, contacted: 263, unreachable: 35, no_answer: 138, rejected: 0, negative: 0, appointments: 4 },
+          'Haziran': { incoming_data: 186, contacted: 93, unreachable: 0, no_answer: 0, rejected: 0, negative: 0, appointments: 4 }
+        },
+        'Cengiz Yurtdışı': {
+          'Mayıs': { incoming_data: 70, contacted: 37, unreachable: 1, no_answer: 20, rejected: 0, negative: 12, appointments: 5 },
+          'Haziran': { incoming_data: 58, contacted: 43, unreachable: 2, no_answer: 13, rejected: 0, negative: 4, appointments: 1 }
+        },
+        'Dilara': {
+          'Mayıs': { incoming_data: 93, contacted: 33, unreachable: 33, no_answer: 22, rejected: 3, negative: 2, appointments: 5 },
+          'Haziran': { incoming_data: 64, contacted: 31, unreachable: 22, no_answer: 11, rejected: 2, negative: 1, appointments: 0 }
+        },
+        'Jennifer': {
+          'Mayıs': { incoming_data: 186, contacted: 71, unreachable: 72, no_answer: 42, rejected: 1, negative: 0, appointments: 12 },
+          'Haziran': { incoming_data: 152, contacted: 76, unreachable: 47, no_answer: 29, rejected: 0, negative: 0, appointments: 11 }
+        },
+        'Merve': {
+          'Mayıs': { incoming_data: 614, contacted: 297, unreachable: 38, no_answer: 226, rejected: 19, negative: 34, appointments: 2 },
+          'Haziran': { incoming_data: 515, contacted: 253, unreachable: 96, no_answer: 166, rejected: 24, negative: 48, appointments: 5 }
+        },
+        'Çiğdem': {
+          'Mayıs': { incoming_data: 373, contacted: 281, unreachable: 79, no_answer: 15, rejected: 12, negative: 1, appointments: 15 },
+          'Haziran': { incoming_data: 66, contacted: 37, unreachable: 21, no_answer: 1, rejected: 8, negative: 0, appointments: 6 }
+        },
+        'Hande': {
+          'Mayıs': { incoming_data: 291, contacted: 206, unreachable: 85, no_answer: 25, rejected: 0, negative: 0, appointments: 20 },
+          'Haziran': { incoming_data: 182, contacted: 105, unreachable: 37, no_answer: 10, rejected: 40, negative: 0, appointments: 16 }
+        },
+        'Hilal': {
+          'Mayıs': { incoming_data: 240, contacted: 115, unreachable: 77, no_answer: 20, rejected: 39, negative: 9, appointments: 25 },
+          'Haziran': { incoming_data: 150, contacted: 102, unreachable: 28, no_answer: 3, rejected: 20, negative: 0, appointments: 10 }
+        },
+        'Saliha': {
+          'Mayıs': { incoming_data: 378, contacted: 248, unreachable: 125, no_answer: 27, rejected: 5, negative: 0, appointments: 28 },
+          'Haziran': { incoming_data: 364, contacted: 236, unreachable: 126, no_answer: 7, rejected: 0, negative: 2, appointments: 11 }
+        }
+      }
+
+      agentsList.forEach(agent => {
+        const data = agentData[agent.name] || {}
+        
         // Mayıs data
+        const mayisData = data['Mayıs'] || {
+          incoming_data: Math.floor(Math.random() * 300) + 100,
+          contacted: Math.floor(Math.random() * 150) + 50,
+          unreachable: Math.floor(Math.random() * 40) + 10,
+          no_answer: Math.floor(Math.random() * 60) + 20,
+          rejected: Math.floor(Math.random() * 20) + 5,
+          negative: Math.floor(Math.random() * 15) + 2,
+          appointments: Math.floor(Math.random() * 25) + 5,
+        }
+        
         sampleReports.push({
           agent_id: agent.id,
           date: '2024-05-01',
           month: 'Mayıs',
           week: 1,
-          incoming_data: Math.floor(Math.random() * 400) + 100,
-          contacted: Math.floor(Math.random() * 200) + 50,
-          unreachable: Math.floor(Math.random() * 50) + 10,
-          no_answer: Math.floor(Math.random() * 80) + 20,
-          rejected: Math.floor(Math.random() * 30) + 5,
-          negative: Math.floor(Math.random() * 20) + 2,
-          appointments: Math.floor(Math.random() * 40) + 5,
+          ...mayisData
         })
         
         // Haziran data
+        const haziranData = data['Haziran'] || {
+          incoming_data: Math.floor(Math.random() * 250) + 80,
+          contacted: Math.floor(Math.random() * 120) + 40,
+          unreachable: Math.floor(Math.random() * 30) + 8,
+          no_answer: Math.floor(Math.random() * 50) + 15,
+          rejected: Math.floor(Math.random() * 15) + 3,
+          negative: Math.floor(Math.random() * 10) + 1,
+          appointments: Math.floor(Math.random() * 20) + 3,
+        }
+        
         sampleReports.push({
           agent_id: agent.id,
           date: '2024-06-01',
           month: 'Haziran',
           week: 1,
-          incoming_data: Math.floor(Math.random() * 350) + 80,
-          contacted: Math.floor(Math.random() * 180) + 40,
-          unreachable: Math.floor(Math.random() * 40) + 8,
-          no_answer: Math.floor(Math.random() * 70) + 15,
-          rejected: Math.floor(Math.random() * 25) + 3,
-          negative: Math.floor(Math.random() * 15) + 1,
-          appointments: Math.floor(Math.random() * 35) + 3,
+          ...haziranData
         })
       })
 
-      const { data: insertedReports, error: reportError } = await supabase
-        .from('reports')
-        .upsert(sampleReports, { onConflict: 'agent_id,date' })
-        .select()
+      // Insert reports in batches
+      const batchSize = 10
+      let insertedCount = 0
+      
+      for (let i = 0; i < sampleReports.length; i += batchSize) {
+        const batch = sampleReports.slice(i, i + batchSize)
+        
+        try {
+          const { data, error } = await supabase
+            .from('reports')
+            .insert(batch)
+            .select()
 
-      if (reportError) {
-        console.error('Error creating reports:', reportError)
-        throw reportError
+          if (error) {
+            console.error('Error inserting report batch:', error)
+          } else {
+            insertedCount += data?.length || 0
+          }
+        } catch (err) {
+          console.error('Error with report batch:', err)
+        }
       }
 
-      console.log('Sample reports created:', insertedReports)
-      setDebugInfo(`Örnek veri oluşturuldu: ${insertedAgents.length} agent, ${insertedReports.length} rapor`)
+      console.log('Reports created:', insertedCount)
+      setDebugInfo(`${insertedCount} rapor oluşturuldu, veriler yükleniyor...`)
       
-      // Refresh data
+      // Now fetch all data
       await fetchData()
       
     } catch (error) {
-      console.error('Error creating sample data:', error)
-      setError(`Örnek veri oluşturma hatası: ${error.message}`)
+      console.error('Error creating sample reports:', error)
+      setError(`Örnek rapor oluşturma hatası: ${error.message}`)
+      setLoading(false)
     }
   }
 
@@ -186,7 +338,7 @@ const Dashboard = () => {
   }
 
   // Show loading state
-  if (loading) {
+  if (loading || dataCreating) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
@@ -194,7 +346,9 @@ const Dashboard = () => {
           <Card.Content>
             <div className="text-center py-8">
               <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
-              <p className="text-secondary-600 mb-2">Veriler yükleniyor...</p>
+              <p className="text-secondary-600 mb-2">
+                {dataCreating ? 'Veriler oluşturuluyor...' : 'Veriler yükleniyor...'}
+              </p>
               <p className="text-sm text-secondary-500 mb-2">{debugInfo}</p>
               <div className="flex items-center justify-center space-x-2 mb-4">
                 <div className={`w-3 h-3 rounded-full ${
@@ -208,13 +362,15 @@ const Dashboard = () => {
                    'Bağlantı başarısız'}
                 </span>
               </div>
-              <Button 
-                onClick={initializeDashboard} 
-                variant="outline" 
-                size="sm"
-              >
-                Yeniden Dene
-              </Button>
+              {!dataCreating && (
+                <Button 
+                  onClick={initializeDashboard} 
+                  variant="outline" 
+                  size="sm"
+                >
+                  Yeniden Dene
+                </Button>
+              )}
             </div>
           </Card.Content>
         </Card>
