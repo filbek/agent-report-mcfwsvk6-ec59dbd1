@@ -15,7 +15,6 @@ const Dashboard = () => {
   const [error, setError] = useState(null)
   const [selectedAgent, setSelectedAgent] = useState(null)
   const [debugInfo, setDebugInfo] = useState('')
-  const [retryCount, setRetryCount] = useState(0)
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
   const categories = ['Yurtdışı', 'Yurtiçi']
@@ -30,17 +29,16 @@ const Dashboard = () => {
       setError(null)
       setDebugInfo('Bağlantı test ediliyor...')
       
-      // Test basic connection
-      const { data: testData, error: testError } = await supabase
+      // Test basic connection first
+      const { data: connectionTest, error: connectionError } = await supabase
         .from('agents')
         .select('count')
         .limit(1)
-        .single()
 
-      if (testError) {
-        console.error('Connection test failed:', testError)
-        setError(`Bağlantı hatası: ${testError.message}`)
-        setDebugInfo('Veritabanı bağlantısı başarısız')
+      if (connectionError) {
+        console.error('Connection test failed:', connectionError)
+        setError(`Veritabanı bağlantı hatası: ${connectionError.message}`)
+        setDebugInfo('Bağlantı başarısız')
         setLoading(false)
         return
       }
@@ -60,80 +58,46 @@ const Dashboard = () => {
     try {
       setDebugInfo('Agentler getiriliyor...')
       
-      // Fetch agents with timeout
-      const agentsPromise = supabase
+      // Fetch agents with better error handling
+      const { data: agentsData, error: agentsError } = await supabase
         .from('agents')
         .select('*')
-        .eq('active', true)
         .order('name')
 
-      const agentsResult = await Promise.race([
-        agentsPromise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 10000)
-        )
-      ])
-
-      if (agentsResult.error) {
-        throw new Error(`Agentler yüklenirken hata: ${agentsResult.error.message}`)
+      if (agentsError) {
+        console.error('Agents fetch error:', agentsError)
+        throw new Error(`Agentler yüklenirken hata: ${agentsError.message}`)
       }
 
-      const agentsData = agentsResult.data || []
-      console.log('Agents loaded:', agentsData.length)
-      setAgents(agentsData)
-
-      if (agentsData.length === 0) {
-        setDebugInfo('Hiç agent bulunamadı')
-        setError('Sistemde hiç agent kaydı bulunmuyor. Lütfen önce agent ekleyin.')
-        setLoading(false)
-        return
-      }
+      console.log('Agents loaded:', agentsData?.length || 0)
+      setAgents(agentsData || [])
 
       setDebugInfo('Raporlar getiriliyor...')
 
-      // Fetch reports with timeout
-      const reportsPromise = supabase
+      // Fetch reports with better error handling
+      const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
         .select('*')
         .order('date', { ascending: false })
 
-      const reportsResult = await Promise.race([
-        reportsPromise,
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Timeout')), 10000)
-        )
-      ])
-
-      if (reportsResult.error) {
-        throw new Error(`Raporlar yüklenirken hata: ${reportsResult.error.message}`)
+      if (reportsError) {
+        console.error('Reports fetch error:', reportsError)
+        throw new Error(`Raporlar yüklenirken hata: ${reportsError.message}`)
       }
 
-      const reportsData = reportsResult.data || []
-      console.log('Reports loaded:', reportsData.length)
-      setReports(reportsData)
+      console.log('Reports loaded:', reportsData?.length || 0)
+      setReports(reportsData || [])
 
-      setDebugInfo(`Yükleme tamamlandı: ${agentsData.length} agent, ${reportsData.length} rapor`)
+      setDebugInfo(`Yükleme tamamlandı: ${agentsData?.length || 0} agent, ${reportsData?.length || 0} rapor`)
       setError(null)
-      setRetryCount(0)
 
     } catch (error) {
       console.error('Error loading data:', error)
-      
-      if (error.message === 'Timeout') {
-        setError('Veri yükleme zaman aşımına uğradı. Lütfen tekrar deneyin.')
-        setDebugInfo('Bağlantı zaman aşımı')
-      } else {
-        setError(error.message)
-        setDebugInfo('Veri yükleme hatası')
-      }
+      setError(error.message)
+      setDebugInfo('Veri yükleme hatası')
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleRetry = async () => {
-    setRetryCount(prev => prev + 1)
-    await initializeDashboard()
   }
 
   const createSampleData = async () => {
@@ -141,55 +105,85 @@ const Dashboard = () => {
       setLoading(true)
       setDebugInfo('Örnek veriler oluşturuluyor...')
       
-      // Run the migration to create sample data
-      const { error } = await supabase.rpc('exec_sql', {
-        sql: `
-          -- Clear existing data
-          TRUNCATE TABLE reports CASCADE;
-          TRUNCATE TABLE agents CASCADE;
-          
-          -- Insert sample agents
-          INSERT INTO agents (name, category, email, notes, active) VALUES
-          ('Adviye', 'Yurtdışı', 'adviye@test.com', 'Test agent', true),
-          ('Jennifer', 'Yurtdışı', 'jennifer@test.com', 'Test agent', true),
-          ('Çiğdem', 'Yurtiçi', 'cigdem@test.com', 'Test agent', true),
-          ('Hande', 'Yurtiçi', 'hande@test.com', 'Test agent', true);
-          
-          -- Insert sample reports
-          INSERT INTO reports (agent_id, date, month, week, incoming_data, contacted, unreachable, no_answer, rejected, negative, appointments)
-          SELECT 
-            a.id,
-            '2024-05-01'::date,
-            'Mayıs',
-            1,
-            100 + (random() * 200)::integer,
-            50 + (random() * 100)::integer,
-            10 + (random() * 30)::integer,
-            20 + (random() * 40)::integer,
-            5 + (random() * 15)::integer,
-            2 + (random() * 8)::integer,
-            5 + (random() * 20)::integer
-          FROM agents a;
-        `
-      })
+      // First, create sample agents
+      const sampleAgents = [
+        { name: 'Adviye', category: 'Yurtdışı', email: 'adviye@test.com', notes: 'Test agent', active: true },
+        { name: 'Jennifer', category: 'Yurtdışı', email: 'jennifer@test.com', notes: 'Test agent', active: true },
+        { name: 'Çiğdem', category: 'Yurtiçi', email: 'cigdem@test.com', notes: 'Test agent', active: true },
+        { name: 'Hande', category: 'Yurtiçi', email: 'hande@test.com', notes: 'Test agent', active: true }
+      ]
 
-      if (error) {
-        console.error('Error creating sample data:', error)
-        setError(`Örnek veri oluşturma hatası: ${error.message}`)
-      } else {
-        setDebugInfo('Örnek veriler oluşturuldu, yeniden yükleniyor...')
-        await loadData()
+      // Clear existing data first
+      await supabase.from('reports').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+      await supabase.from('agents').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+
+      // Insert sample agents
+      const { data: insertedAgents, error: agentsError } = await supabase
+        .from('agents')
+        .insert(sampleAgents)
+        .select()
+
+      if (agentsError) {
+        throw new Error(`Agent oluşturma hatası: ${agentsError.message}`)
       }
+
+      console.log('Sample agents created:', insertedAgents?.length || 0)
+
+      // Create sample reports for each agent
+      const sampleReports = []
+      const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
+      
+      for (const agent of insertedAgents || []) {
+        for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
+          for (let week = 1; week <= 4; week++) {
+            const baseData = 50 + Math.floor(Math.random() * 100)
+            const contacted = Math.floor(baseData * 0.6) + Math.floor(Math.random() * 20)
+            const appointments = Math.floor(contacted * 0.15) + Math.floor(Math.random() * 10)
+            
+            sampleReports.push({
+              agent_id: agent.id,
+              date: `2024-0${5 + monthIndex}-${week * 7}`,
+              month: months[monthIndex],
+              week: week,
+              incoming_data: baseData,
+              contacted: contacted,
+              unreachable: Math.floor(Math.random() * 15),
+              no_answer: Math.floor(Math.random() * 20),
+              rejected: Math.floor(Math.random() * 10),
+              negative: Math.floor(Math.random() * 5),
+              appointments: appointments
+            })
+          }
+        }
+      }
+
+      // Insert sample reports
+      const { error: reportsError } = await supabase
+        .from('reports')
+        .insert(sampleReports)
+
+      if (reportsError) {
+        throw new Error(`Rapor oluşturma hatası: ${reportsError.message}`)
+      }
+
+      console.log('Sample reports created:', sampleReports.length)
+      setDebugInfo('Örnek veriler oluşturuldu, yeniden yükleniyor...')
+      
+      // Reload data
+      await loadData()
+
     } catch (error) {
-      console.error('Error in createSampleData:', error)
+      console.error('Error creating sample data:', error)
       setError(`Örnek veri oluşturma hatası: ${error.message}`)
-    } finally {
       setLoading(false)
     }
   }
 
+  const handleRetry = async () => {
+    await initializeDashboard()
+  }
+
   const forceRefresh = async () => {
-    // Clear cache and reload
     setAgents([])
     setReports([])
     await initializeDashboard()
@@ -205,10 +199,7 @@ const Dashboard = () => {
             <div className="text-center py-8">
               <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
               <p className="text-secondary-600 mb-2">Veriler yükleniyor...</p>
-              <p className="text-sm text-secondary-500 mb-4">{debugInfo}</p>
-              {retryCount > 0 && (
-                <p className="text-xs text-secondary-400">Deneme: {retryCount}</p>
-              )}
+              <p className="text-sm text-secondary-500">{debugInfo}</p>
             </div>
           </Card.Content>
         </Card>
@@ -229,7 +220,7 @@ const Dashboard = () => {
               <p className="text-secondary-600 mb-2">{error}</p>
               <p className="text-sm text-secondary-500 mb-4">{debugInfo}</p>
               <div className="text-xs text-secondary-400 mb-4">
-                Agents: {agents.length} | Reports: {reports.length} | Retry: {retryCount}
+                Agents: {agents.length} | Reports: {reports.length}
               </div>
               <div className="space-x-2">
                 <Button onClick={handleRetry}>
