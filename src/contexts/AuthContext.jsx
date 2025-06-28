@@ -73,7 +73,7 @@ export const AuthProvider = ({ children }) => {
 
   const fetchProfile = async (userId) => {
     try {
-      // First check if profiles table exists and is accessible
+      // Simple direct query without complex policies
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -82,7 +82,7 @@ export const AuthProvider = ({ children }) => {
 
       if (error) {
         console.error('Error fetching profile:', error)
-        // If there's an error, create a default profile object
+        // Create a default profile for the user
         setProfile({
           user_id: userId,
           role: 'viewer',
@@ -93,38 +93,28 @@ export const AuthProvider = ({ children }) => {
       }
 
       if (!data) {
-        // Try to create a profile
-        try {
-          const { data: newProfile, error: createError } = await supabase
-            .from('profiles')
-            .insert([
-              {
-                user_id: userId,
-                role: 'viewer',
-                full_name: ''
-              }
-            ])
-            .select()
-            .single()
-
-          if (createError) {
-            console.error('Error creating profile:', createError)
-            // Fallback to default profile
-            setProfile({
+        // Create profile if it doesn't exist
+        const { data: newProfile, error: createError } = await supabase
+          .from('profiles')
+          .insert([
+            {
               user_id: userId,
               role: 'viewer',
               full_name: ''
-            })
-          } else {
-            setProfile(newProfile)
-          }
-        } catch (createErr) {
-          console.error('Error in profile creation:', createErr)
+            }
+          ])
+          .select()
+          .single()
+
+        if (createError) {
+          console.error('Error creating profile:', createError)
           setProfile({
             user_id: userId,
             role: 'viewer',
             full_name: ''
           })
+        } else {
+          setProfile(newProfile)
         }
       } else {
         setProfile(data)

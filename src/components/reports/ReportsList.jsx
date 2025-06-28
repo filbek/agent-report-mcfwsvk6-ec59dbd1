@@ -8,6 +8,7 @@ import { tr } from 'date-fns/locale'
 
 const ReportsList = () => {
   const [reports, setReports] = useState([])
+  const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
   const [filters, setFilters] = useState({
     month: '',
@@ -16,49 +17,83 @@ const ReportsList = () => {
   })
 
   useEffect(() => {
-    fetchReports()
-  }, [filters])
+    fetchData()
+  }, [])
 
-  const fetchReports = async () => {
+  useEffect(() => {
+    if (agents.length > 0) {
+      fetchReports()
+    }
+  }, [filters, agents])
+
+  const fetchData = async () => {
     try {
       setLoading(true)
-      let query = supabase
-        .from('reports')
-        .select(`
-          *,
-          agents (
-            name,
-            category
-          )
-        `)
-        .order('date', { ascending: false })
-
-      if (filters.month) {
-        query = query.eq('month', filters.month)
-      }
       
-      if (filters.category) {
-        query = query.eq('agents.category', filters.category)
+      // Fetch agents first
+      const { data: agentsData, error: agentsError } = await supabase
+        .from('agents')
+        .select('*')
+
+      if (agentsError) {
+        console.error('Error fetching agents:', agentsError)
+        setAgents([])
+      } else {
+        setAgents(agentsData || [])
       }
-
-      const { data, error } = await query
-
-      if (error) throw error
-      setReports(data || [])
     } catch (error) {
-      console.error('Error fetching reports:', error)
+      console.error('Error fetching agents:', error)
+      setAgents([])
     } finally {
       setLoading(false)
     }
   }
 
+  const fetchReports = async () => {
+    try {
+      let query = supabase
+        .from('reports')
+        .select('*')
+        .order('date', { ascending: false })
+
+      if (filters.month) {
+        query = query.eq('month', filters.month)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        console.error('Error fetching reports:', error)
+        setReports([])
+      } else {
+        // Filter by category if needed
+        let filteredData = data || []
+        if (filters.category) {
+          filteredData = filteredData.filter(report => {
+            const agent = agents.find(a => a.id === report.agent_id)
+            return agent?.category === filters.category
+          })
+        }
+        setReports(filteredData)
+      }
+    } catch (error) {
+      console.error('Error fetching reports:', error)
+      setReports([])
+    }
+  }
+
+  const getAgentInfo = (agentId) => {
+    return agents.find(agent => agent.id === agentId) || { name: 'Unknown', category: 'Unknown' }
+  }
+
   const weeklyData = reports.reduce((acc, report) => {
-    const key = `${report.month}-W${report.week}-${report.agents?.category}`
+    const agent = getAgentInfo(report.agent_id)
+    const key = `${report.month}-W${report.week}-${agent.category}`
     if (!acc[key]) {
       acc[key] = {
         month: report.month,
         week: report.week,
-        category: report.agents?.category,
+        category: agent.category,
         incoming_data: 0,
         contacted: 0,
         unreachable: 0,
@@ -227,35 +262,38 @@ const ReportsList = () => {
               </Table.Row>
             </Table.Header>
             <Table.Body>
-              {reports.slice(0, 50).map((report) => (
-                <Table.Row key={report.id}>
-                  <Table.Cell>
-                    {format(new Date(report.date), 'dd MMM yyyy', { locale: tr })}
-                  </Table.Cell>
-                  <Table.Cell>{report.agents?.name}</Table.Cell>
-                  <Table.Cell>
-                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                      report.agents?.category === 'Yurtdışı' 
-                        ? 'bg-blue-100 text-blue-800'
-                        : 'bg-green-100 text-green-800'
-                    }`}>
-                      {report.agents?.category}
-                    </span>
-                  </Table.Cell>
-                  <Table.Cell>{report.incoming_data}</Table.Cell>
-                  <Table.Cell>{report.contacted}</Table.Cell>
-                  <Table.Cell>{report.appointments}</Table.Cell>
-                  <Table.Cell>
-                    <span className={`font-medium ${
-                      parseFloat(report.sales_rate) >= 10 ? 'text-success-600' :
-                      parseFloat(report.sales_rate) >= 5 ? 'text-warning-600' :
-                      'text-danger-600'
-                    }`}>
-                      %{report.sales_rate}
-                    </span>
-                  </Table.Cell>
-                </Table.Row>
-              ))}
+              {reports.slice(0, 50).map((report) => {
+                const agent = getAgentInfo(report.agent_id)
+                return (
+                  <Table.Row key={report.id}>
+                    <Table.Cell>
+                      {format(new Date(report.date), 'dd MMM yyyy', { locale: tr })}
+                    </Table.Cell>
+                    <Table.Cell>{agent.name}</Table.Cell>
+                    <Table.Cell>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                        agent.category === 'Yurtdışı' 
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-green-100 text-green-800'
+                      }`}>
+                        {agent.category}
+                      </span>
+                    </Table.Cell>
+                    <Table.Cell>{report.incoming_data}</Table.Cell>
+                    <Table.Cell>{report.contacted}</Table.Cell>
+                    <Table.Cell>{report.appointments}</Table.Cell>
+                    <Table.Cell>
+                      <span className={`font-medium ${
+                        parseFloat(report.sales_rate) >= 10 ? 'text-success-600' :
+                        parseFloat(report.sales_rate) >= 5 ? 'text-warning-600' :
+                        'text-danger-600'
+                      }`}>
+                        %{parseFloat(report.sales_rate || 0).toFixed(1)}
+                      </span>
+                    </Table.Cell>
+                  </Table.Row>
+                )
+              })}
             </Table.Body>
           </Table>
         </Card.Content>

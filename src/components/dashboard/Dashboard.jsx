@@ -25,37 +25,43 @@ const Dashboard = () => {
     try {
       setLoading(true)
       
+      // Fetch agents
       const { data: agentsData, error: agentsError } = await supabase
         .from('agents')
         .select('*')
         .eq('active', true)
 
+      if (agentsError) {
+        console.error('Error fetching agents:', agentsError)
+        setAgents([])
+      } else {
+        setAgents(agentsData || [])
+      }
+
+      // Fetch reports
       const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
-        .select(`
-          *,
-          agents (
-            name,
-            category
-          )
-        `)
+        .select('*')
 
-      if (agentsError) throw agentsError
-      if (reportsError) throw reportsError
-
-      setAgents(agentsData || [])
-      setReports(reportsData || [])
+      if (reportsError) {
+        console.error('Error fetching reports:', reportsError)
+        setReports([])
+      } else {
+        setReports(reportsData || [])
+      }
     } catch (error) {
-      console.error('Error fetching data:', error)
+      console.error('Error in fetchData:', error)
+      setAgents([])
+      setReports([])
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredReports = reports.filter(report => 
-    report.agents?.category === activeCategory && 
-    report.month === activeMonth
-  )
+  const filteredReports = reports.filter(report => {
+    const agent = agents.find(a => a.id === report.agent_id)
+    return agent?.category === activeCategory && report.month === activeMonth
+  })
 
   const aggregatedData = agents
     .filter(agent => agent.category === activeCategory)
@@ -262,19 +268,21 @@ const Dashboard = () => {
                   </Table.Cell>
                 </Table.Row>
               ))}
-              <Table.Row className="bg-secondary-50 font-semibold">
-                <Table.Cell>TOPLAM</Table.Cell>
-                <Table.Cell>{totalRow.incoming_data}</Table.Cell>
-                <Table.Cell>{totalRow.contacted}</Table.Cell>
-                <Table.Cell>{totalRow.unreachable}</Table.Cell>
-                <Table.Cell>{totalRow.no_answer}</Table.Cell>
-                <Table.Cell>{totalRow.rejected}</Table.Cell>
-                <Table.Cell>{totalRow.negative}</Table.Cell>
-                <Table.Cell>{totalRow.appointments}</Table.Cell>
-                <Table.Cell>
-                  <span className="text-primary-600">%{totalSalesRate}</span>
-                </Table.Cell>
-              </Table.Row>
+              {aggregatedData.length > 0 && (
+                <Table.Row className="bg-secondary-50 font-semibold">
+                  <Table.Cell>TOPLAM</Table.Cell>
+                  <Table.Cell>{totalRow.incoming_data}</Table.Cell>
+                  <Table.Cell>{totalRow.contacted}</Table.Cell>
+                  <Table.Cell>{totalRow.unreachable}</Table.Cell>
+                  <Table.Cell>{totalRow.no_answer}</Table.Cell>
+                  <Table.Cell>{totalRow.rejected}</Table.Cell>
+                  <Table.Cell>{totalRow.negative}</Table.Cell>
+                  <Table.Cell>{totalRow.appointments}</Table.Cell>
+                  <Table.Cell>
+                    <span className="text-primary-600">%{totalSalesRate}</span>
+                  </Table.Cell>
+                </Table.Row>
+              )}
             </Table.Body>
           </Table>
         </Card.Content>
