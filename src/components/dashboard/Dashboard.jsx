@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { supabase, testSupabaseConnection } from '../../lib/supabase.js'
+import { supabase, testSupabaseConnection, safeQuery } from '../../lib/supabase.js'
 import Card from '../ui/Card.jsx'
 import Table from '../ui/Table.jsx'
 import Button from '../ui/Button.jsx'
@@ -60,36 +60,42 @@ const Dashboard = () => {
     try {
       setDebugInfo('Mevcut veriler kontrol ediliyor...')
       
-      // Check if we have any agents
-      const { data: existingAgents, error: agentsError } = await supabase
-        .from('agents')
-        .select('id, name, category')
-        .limit(5)
+      // Check if we have any agents using safe query
+      const agentsResult = await safeQuery(async () => {
+        return await supabase
+          .from('agents')
+          .select('id, name, category')
+          .limit(5)
+      })
 
-      if (agentsError) {
-        console.error('Error checking agents:', agentsError)
-        throw new Error(`Agent kontrolü başarısız: ${agentsError.message}`)
+      if (agentsResult.error) {
+        console.error('Error checking agents:', agentsResult.error)
+        throw new Error(`Agent kontrolü başarısız: ${agentsResult.error.message}`)
       }
 
-      console.log('Existing agents found:', existingAgents?.length || 0)
+      const existingAgents = agentsResult.data || []
+      console.log('Existing agents found:', existingAgents.length)
 
-      // Check if we have any reports
-      const { data: existingReports, error: reportsError } = await supabase
-        .from('reports')
-        .select('id, agent_id, month')
-        .limit(5)
+      // Check if we have any reports using safe query
+      const reportsResult = await safeQuery(async () => {
+        return await supabase
+          .from('reports')
+          .select('id, agent_id, month')
+          .limit(5)
+      })
 
-      if (reportsError) {
-        console.error('Error checking reports:', reportsError)
-        throw new Error(`Rapor kontrolü başarısız: ${reportsError.message}`)
+      if (reportsResult.error) {
+        console.error('Error checking reports:', reportsResult.error)
+        throw new Error(`Rapor kontrolü başarısız: ${reportsResult.error.message}`)
       }
 
-      console.log('Existing reports found:', existingReports?.length || 0)
+      const existingReports = reportsResult.data || []
+      console.log('Existing reports found:', existingReports.length)
 
-      if (!existingAgents || existingAgents.length === 0) {
+      if (existingAgents.length === 0) {
         setDebugInfo('Hiç agent bulunamadı, örnek veriler oluşturuluyor...')
         await createSampleData()
-      } else if (!existingReports || existingReports.length === 0) {
+      } else if (existingReports.length === 0) {
         setDebugInfo('Agentler mevcut ama raporlar yok, örnek raporlar oluşturuluyor...')
         await createSampleReports(existingAgents)
       } else {
@@ -126,27 +132,31 @@ const Dashboard = () => {
       const insertedAgents = []
       for (const agent of sampleAgents) {
         try {
-          const { data, error } = await supabase
-            .from('agents')
-            .insert([agent])
-            .select()
-            .single()
-
-          if (error) {
-            console.error(`Error inserting agent ${agent.name}:`, error)
-            // Try to get existing agent
-            const { data: existing } = await supabase
+          const result = await safeQuery(async () => {
+            return await supabase
               .from('agents')
-              .select('*')
-              .eq('name', agent.name)
-              .eq('category', agent.category)
+              .insert([agent])
+              .select()
               .single()
+          })
+
+          if (result.error) {
+            console.error(`Error inserting agent ${agent.name}:`, result.error)
+            // Try to get existing agent
+            const existingResult = await safeQuery(async () => {
+              return await supabase
+                .from('agents')
+                .select('*')
+                .eq('name', agent.name)
+                .eq('category', agent.category)
+                .single()
+            })
             
-            if (existing) {
-              insertedAgents.push(existing)
+            if (existingResult.data) {
+              insertedAgents.push(existingResult.data)
             }
           } else {
-            insertedAgents.push(data)
+            insertedAgents.push(result.data)
           }
         } catch (err) {
           console.error(`Error with agent ${agent.name}:`, err)
@@ -255,7 +265,7 @@ const Dashboard = () => {
         })
       })
 
-      // Insert reports in batches
+      // Insert reports in batches using safe query
       const batchSize = 10
       let insertedCount = 0
       
@@ -263,15 +273,17 @@ const Dashboard = () => {
         const batch = sampleReports.slice(i, i + batchSize)
         
         try {
-          const { data, error } = await supabase
-            .from('reports')
-            .insert(batch)
-            .select()
+          const result = await safeQuery(async () => {
+            return await supabase
+              .from('reports')
+              .insert(batch)
+              .select()
+          })
 
-          if (error) {
-            console.error('Error inserting report batch:', error)
+          if (result.error) {
+            console.error('Error inserting report batch:', result.error)
           } else {
-            insertedCount += data?.length || 0
+            insertedCount += result.data?.length || 0
           }
         } catch (err) {
           console.error('Error with report batch:', err)
@@ -295,37 +307,43 @@ const Dashboard = () => {
     try {
       setDebugInfo('Agentler getiriliyor...')
       
-      // Fetch agents with error handling
-      const { data: agentsData, error: agentsError } = await supabase
-        .from('agents')
-        .select('*')
-        .order('name')
+      // Fetch agents with error handling using safe query
+      const agentsResult = await safeQuery(async () => {
+        return await supabase
+          .from('agents')
+          .select('*')
+          .order('name')
+      })
 
-      if (agentsError) {
-        console.error('Error fetching agents:', agentsError)
-        throw new Error(`Agentler yüklenirken hata: ${agentsError.message}`)
+      if (agentsResult.error) {
+        console.error('Error fetching agents:', agentsResult.error)
+        throw new Error(`Agentler yüklenirken hata: ${agentsResult.error.message}`)
       }
 
-      console.log('Agents fetched:', agentsData?.length || 0)
-      setAgents(agentsData || [])
+      const agentsData = agentsResult.data || []
+      console.log('Agents fetched:', agentsData.length)
+      setAgents(agentsData)
 
       setDebugInfo('Raporlar getiriliyor...')
 
-      // Fetch reports with error handling
-      const { data: reportsData, error: reportsError } = await supabase
-        .from('reports')
-        .select('*')
-        .order('date', { ascending: false })
+      // Fetch reports with error handling using safe query
+      const reportsResult = await safeQuery(async () => {
+        return await supabase
+          .from('reports')
+          .select('*')
+          .order('date', { ascending: false })
+      })
 
-      if (reportsError) {
-        console.error('Error fetching reports:', reportsError)
-        throw new Error(`Raporlar yüklenirken hata: ${reportsError.message}`)
+      if (reportsResult.error) {
+        console.error('Error fetching reports:', reportsResult.error)
+        throw new Error(`Raporlar yüklenirken hata: ${reportsResult.error.message}`)
       }
 
-      console.log('Reports fetched:', reportsData?.length || 0)
-      setReports(reportsData || [])
+      const reportsData = reportsResult.data || []
+      console.log('Reports fetched:', reportsData.length)
+      setReports(reportsData)
 
-      setDebugInfo(`Yükleme tamamlandı: ${agentsData?.length || 0} agent, ${reportsData?.length || 0} rapor`)
+      setDebugInfo(`Yükleme tamamlandı: ${agentsData.length} agent, ${reportsData.length} rapor`)
       setError(null)
 
     } catch (error) {

@@ -7,37 +7,68 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false
+    detectSessionInUrl: false,
+    flowType: 'pkce'
   },
-  realtime: {
-    params: {
-      eventsPerSecond: 2
-    }
+  db: {
+    schema: 'public'
   },
   global: {
     headers: {
-      'x-my-custom-header': 'my-app-name',
+      'x-my-custom-header': 'saglik-turizmi-admin',
     },
   },
 })
 
-// Test connection function
+// Test connection function with better error handling
 export const testSupabaseConnection = async () => {
   try {
+    console.log('Testing Supabase connection...')
+    
+    // Simple health check
     const { data, error } = await supabase
       .from('agents')
-      .select('count')
+      .select('count(*)')
       .limit(1)
+      .single()
     
     if (error) {
       console.error('Supabase connection test failed:', error)
-      return { success: false, error: error.message }
+      return { 
+        success: false, 
+        error: error.message,
+        details: error
+      }
     }
     
-    console.log('Supabase connection test successful')
-    return { success: true, data }
+    console.log('Supabase connection test successful:', data)
+    return { 
+      success: true, 
+      data,
+      message: 'Connection successful'
+    }
   } catch (error) {
     console.error('Supabase connection test error:', error)
-    return { success: false, error: error.message }
+    return { 
+      success: false, 
+      error: error.message || 'Unknown connection error',
+      details: error
+    }
+  }
+}
+
+// Enhanced query function with retry logic
+export const safeQuery = async (queryFn, retries = 3) => {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const result = await queryFn()
+      return result
+    } catch (error) {
+      console.error(`Query attempt ${i + 1} failed:`, error)
+      if (i === retries - 1) throw error
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)))
+    }
   }
 }
