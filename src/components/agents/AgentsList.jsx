@@ -6,12 +6,14 @@ import Table from '../ui/Table.jsx'
 import Button from '../ui/Button.jsx'
 import Input from '../ui/Input.jsx'
 import Modal from '../ui/Modal.jsx'
+import AgentProfile from './AgentProfile.jsx'
 
 const AgentsList = () => {
   const [agents, setAgents] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editingAgent, setEditingAgent] = useState(null)
+  const [selectedAgent, setSelectedAgent] = useState(null)
   const [formData, setFormData] = useState({
     name: '',
     category: 'Yurtdışı',
@@ -96,6 +98,10 @@ const AgentsList = () => {
     }
   }
 
+  const handleViewProfile = (agent) => {
+    setSelectedAgent(agent)
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -125,16 +131,19 @@ const AgentsList = () => {
                 <Table.Head>Kategori</Table.Head>
                 <Table.Head>E-posta</Table.Head>
                 <Table.Head>Durum</Table.Head>
-                {isAdmin() && <Table.Head>İşlemler</Table.Head>}
+                <Table.Head>İşlemler</Table.Head>
               </Table.Row>
             </Table.Header>
             <Table.Body>
               {agents.map((agent) => (
                 <Table.Row key={agent.id}>
                   <Table.Cell>
-                    <div className="font-medium text-secondary-900">
+                    <button 
+                      onClick={() => handleViewProfile(agent)}
+                      className="font-medium text-primary-600 hover:text-primary-800 transition-colors"
+                    >
                       {agent.name}
-                    </div>
+                    </button>
                   </Table.Cell>
                   <Table.Cell>
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
@@ -155,26 +164,35 @@ const AgentsList = () => {
                       {agent.active ? 'Aktif' : 'Pasif'}
                     </span>
                   </Table.Cell>
-                  {isAdmin() && (
-                    <Table.Cell>
-                      <div className="flex space-x-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleEdit(agent)}
-                        >
-                          <i className="bi bi-pencil"></i>
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="danger"
-                          onClick={() => handleDelete(agent.id)}
-                        >
-                          <i className="bi bi-trash"></i>
-                        </Button>
-                      </div>
-                    </Table.Cell>
-                  )}
+                  <Table.Cell>
+                    <div className="flex space-x-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleViewProfile(agent)}
+                      >
+                        <i className="bi bi-eye"></i>
+                      </Button>
+                      {isAdmin() && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEdit(agent)}
+                          >
+                            <i className="bi bi-pencil"></i>
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => handleDelete(agent.id)}
+                          >
+                            <i className="bi bi-trash"></i>
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </Table.Cell>
                 </Table.Row>
               ))}
             </Table.Body>
@@ -246,6 +264,13 @@ const AgentsList = () => {
           </div>
         </form>
       </Modal>
+
+      {selectedAgent && (
+        <AgentProfile 
+          agent={selectedAgent} 
+          onClose={() => setSelectedAgent(null)} 
+        />
+      )}
     </div>
   )
 }

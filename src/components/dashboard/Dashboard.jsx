@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase.js'
 import Card from '../ui/Card.jsx'
 import Table from '../ui/Table.jsx'
 import Button from '../ui/Button.jsx'
+import AgentProfile from '../agents/AgentProfile.jsx'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts'
 
 const Dashboard = () => {
@@ -11,6 +12,7 @@ const Dashboard = () => {
   const [agents, setAgents] = useState([])
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedAgent, setSelectedAgent] = useState(null)
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
   const categories = ['Yurtdışı', 'Yurtiçi']
@@ -122,8 +124,14 @@ const Dashboard = () => {
   const pieData = [
     { name: 'Görüşülen', value: totalRow.contacted, color: '#22c55e' },
     { name: 'Cevap Vermiyor', value: totalRow.no_answer, color: '#f59e0b' },
-    { name: 'Ulaşılamadı', value: totalRow.unreachable, color: '#ef4444' }
-  ]
+    { name: 'Ulaşılamadı', value: totalRow.unreachable, color: '#ef4444' },
+    { name: 'Red', value: totalRow.rejected, color: '#8b5cf6' },
+    { name: 'Olumsuz', value: totalRow.negative, color: '#6b7280' }
+  ].filter(item => item.value > 0)
+
+  const handleAgentClick = (agent) => {
+    setSelectedAgent(agent)
+  }
 
   if (loading) {
     return (
@@ -165,6 +173,45 @@ const Dashboard = () => {
         ))}
       </div>
 
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <Card.Content>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary-600">{totalRow.incoming_data}</p>
+              <p className="text-sm text-secondary-600">Toplam Gelen Data</p>
+            </div>
+          </Card.Content>
+        </Card>
+        
+        <Card>
+          <Card.Content>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-success-600">{totalRow.contacted}</p>
+              <p className="text-sm text-secondary-600">Toplam Görüşülen</p>
+            </div>
+          </Card.Content>
+        </Card>
+        
+        <Card>
+          <Card.Content>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-warning-600">{totalRow.appointments}</p>
+              <p className="text-sm text-secondary-600">Toplam Randevu</p>
+            </div>
+          </Card.Content>
+        </Card>
+        
+        <Card>
+          <Card.Content>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-primary-600">%{totalSalesRate}</p>
+              <p className="text-sm text-secondary-600">Ortalama Satış Oranı</p>
+            </div>
+          </Card.Content>
+        </Card>
+      </div>
+
       <Card>
         <Card.Header>
           <h3 className="text-lg font-semibold text-secondary-900">
@@ -190,7 +237,10 @@ const Dashboard = () => {
               {aggregatedData.map((agent) => (
                 <Table.Row key={agent.id}>
                   <Table.Cell>
-                    <button className="text-primary-600 hover:text-primary-800 font-medium">
+                    <button 
+                      onClick={() => handleAgentClick(agent)}
+                      className="text-primary-600 hover:text-primary-800 font-medium transition-colors"
+                    >
                       {agent.name}
                     </button>
                   </Table.Cell>
@@ -253,7 +303,7 @@ const Dashboard = () => {
         <Card>
           <Card.Header>
             <h3 className="text-lg font-semibold text-secondary-900">
-              İletişim Başarı Oranı
+              İletişim Dağılımı
             </h3>
           </Card.Header>
           <Card.Content>
@@ -296,6 +346,13 @@ const Dashboard = () => {
           </ResponsiveContainer>
         </Card.Content>
       </Card>
+
+      {selectedAgent && (
+        <AgentProfile 
+          agent={selectedAgent} 
+          onClose={() => setSelectedAgent(null)} 
+        />
+      )}
     </div>
   )
 }
