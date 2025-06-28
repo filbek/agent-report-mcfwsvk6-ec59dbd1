@@ -4,6 +4,7 @@ import Card from '../ui/Card.jsx'
 import Table from '../ui/Table.jsx'
 import Button from '../ui/Button.jsx'
 import AgentProfile from '../agents/AgentProfile.jsx'
+import DataVerification from './DataVerification.jsx'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from 'recharts'
 
 const Dashboard = () => {
@@ -15,6 +16,7 @@ const Dashboard = () => {
   const [error, setError] = useState(null)
   const [selectedAgent, setSelectedAgent] = useState(null)
   const [debugInfo, setDebugInfo] = useState('')
+  const [showVerification, setShowVerification] = useState(false)
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
   const categories = ['Yurtdışı', 'Yurtiçi']
@@ -39,6 +41,7 @@ const Dashboard = () => {
         console.error('Connection test failed:', connectionError)
         setError(`Veritabanı bağlantı hatası: ${connectionError.message}`)
         setDebugInfo('Bağlantı başarısız')
+        setShowVerification(true)
         setLoading(false)
         return
       }
@@ -50,6 +53,7 @@ const Dashboard = () => {
       console.error('Dashboard initialization error:', error)
       setError(`Başlatma hatası: ${error.message}`)
       setDebugInfo('Dashboard başlatılamadı')
+      setShowVerification(true)
       setLoading(false)
     }
   }
@@ -90,91 +94,20 @@ const Dashboard = () => {
 
       setDebugInfo(`Yükleme tamamlandı: ${agentsData?.length || 0} agent, ${reportsData?.length || 0} rapor`)
       setError(null)
+      setShowVerification(false)
+
+      // Check if we have data, if not show verification
+      if (!agentsData?.length || !reportsData?.length) {
+        setShowVerification(true)
+        setError('Veri bulunamadı. Lütfen veritabanı durumunu kontrol edin.')
+      }
 
     } catch (error) {
       console.error('Error loading data:', error)
       setError(error.message)
       setDebugInfo('Veri yükleme hatası')
+      setShowVerification(true)
     } finally {
-      setLoading(false)
-    }
-  }
-
-  const createSampleData = async () => {
-    try {
-      setLoading(true)
-      setDebugInfo('Örnek veriler oluşturuluyor...')
-      
-      // First, create sample agents
-      const sampleAgents = [
-        { name: 'Adviye', category: 'Yurtdışı', email: 'adviye@test.com', notes: 'Test agent', active: true },
-        { name: 'Jennifer', category: 'Yurtdışı', email: 'jennifer@test.com', notes: 'Test agent', active: true },
-        { name: 'Çiğdem', category: 'Yurtiçi', email: 'cigdem@test.com', notes: 'Test agent', active: true },
-        { name: 'Hande', category: 'Yurtiçi', email: 'hande@test.com', notes: 'Test agent', active: true }
-      ]
-
-      // Clear existing data first
-      await supabase.from('reports').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-      await supabase.from('agents').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-
-      // Insert sample agents
-      const { data: insertedAgents, error: agentsError } = await supabase
-        .from('agents')
-        .insert(sampleAgents)
-        .select()
-
-      if (agentsError) {
-        throw new Error(`Agent oluşturma hatası: ${agentsError.message}`)
-      }
-
-      console.log('Sample agents created:', insertedAgents?.length || 0)
-
-      // Create sample reports for each agent
-      const sampleReports = []
-      const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
-      
-      for (const agent of insertedAgents || []) {
-        for (let monthIndex = 0; monthIndex < months.length; monthIndex++) {
-          for (let week = 1; week <= 4; week++) {
-            const baseData = 50 + Math.floor(Math.random() * 100)
-            const contacted = Math.floor(baseData * 0.6) + Math.floor(Math.random() * 20)
-            const appointments = Math.floor(contacted * 0.15) + Math.floor(Math.random() * 10)
-            
-            sampleReports.push({
-              agent_id: agent.id,
-              date: `2024-0${5 + monthIndex}-${week * 7}`,
-              month: months[monthIndex],
-              week: week,
-              incoming_data: baseData,
-              contacted: contacted,
-              unreachable: Math.floor(Math.random() * 15),
-              no_answer: Math.floor(Math.random() * 20),
-              rejected: Math.floor(Math.random() * 10),
-              negative: Math.floor(Math.random() * 5),
-              appointments: appointments
-            })
-          }
-        }
-      }
-
-      // Insert sample reports
-      const { error: reportsError } = await supabase
-        .from('reports')
-        .insert(sampleReports)
-
-      if (reportsError) {
-        throw new Error(`Rapor oluşturma hatası: ${reportsError.message}`)
-      }
-
-      console.log('Sample reports created:', sampleReports.length)
-      setDebugInfo('Örnek veriler oluşturuldu, yeniden yükleniyor...')
-      
-      // Reload data
-      await loadData()
-
-    } catch (error) {
-      console.error('Error creating sample data:', error)
-      setError(`Örnek veri oluşturma hatası: ${error.message}`)
       setLoading(false)
     }
   }
@@ -187,6 +120,11 @@ const Dashboard = () => {
     setAgents([])
     setReports([])
     await initializeDashboard()
+  }
+
+  const handleDataReady = () => {
+    setShowVerification(false)
+    initializeDashboard()
   }
 
   // Show loading state
@@ -207,38 +145,39 @@ const Dashboard = () => {
     )
   }
 
-  // Show error state
-  if (error) {
+  // Show verification/error state
+  if (error || showVerification) {
     return (
       <div className="space-y-6">
         <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
-        <Card>
-          <Card.Content>
-            <div className="text-center py-8">
-              <i className="bi bi-exclamation-triangle text-4xl text-warning-600 mb-4"></i>
-              <h3 className="text-lg font-semibold text-secondary-900 mb-2">Veri Yükleme Hatası</h3>
-              <p className="text-secondary-600 mb-2">{error}</p>
-              <p className="text-sm text-secondary-500 mb-4">{debugInfo}</p>
-              <div className="text-xs text-secondary-400 mb-4">
-                Agents: {agents.length} | Reports: {reports.length}
+        
+        {error && (
+          <Card>
+            <Card.Content>
+              <div className="text-center py-4">
+                <i className="bi bi-exclamation-triangle text-4xl text-warning-600 mb-4"></i>
+                <h3 className="text-lg font-semibold text-secondary-900 mb-2">Veri Yükleme Sorunu</h3>
+                <p className="text-secondary-600 mb-2">{error}</p>
+                <p className="text-sm text-secondary-500 mb-4">{debugInfo}</p>
+                <div className="text-xs text-secondary-400 mb-4">
+                  Agents: {agents.length} | Reports: {reports.length}
+                </div>
+                <div className="space-x-2">
+                  <Button onClick={handleRetry}>
+                    <i className="bi bi-arrow-clockwise mr-2"></i>
+                    Tekrar Dene
+                  </Button>
+                  <Button onClick={forceRefresh} variant="secondary">
+                    <i className="bi bi-arrow-repeat mr-2"></i>
+                    Zorla Yenile
+                  </Button>
+                </div>
               </div>
-              <div className="space-x-2">
-                <Button onClick={handleRetry}>
-                  <i className="bi bi-arrow-clockwise mr-2"></i>
-                  Tekrar Dene
-                </Button>
-                <Button onClick={forceRefresh} variant="secondary">
-                  <i className="bi bi-arrow-repeat mr-2"></i>
-                  Zorla Yenile
-                </Button>
-                <Button onClick={createSampleData} variant="outline">
-                  <i className="bi bi-plus mr-2"></i>
-                  Örnek Veri Oluştur
-                </Button>
-              </div>
-            </div>
-          </Card.Content>
-        </Card>
+            </Card.Content>
+          </Card>
+        )}
+
+        <DataVerification onDataReady={handleDataReady} />
       </div>
     )
   }
@@ -262,9 +201,9 @@ const Dashboard = () => {
                   <i className="bi bi-arrow-clockwise mr-2"></i>
                   Verileri Yenile
                 </Button>
-                <Button onClick={createSampleData} variant="secondary">
-                  <i className="bi bi-plus mr-2"></i>
-                  Örnek Veri Oluştur
+                <Button onClick={() => setShowVerification(true)} variant="secondary">
+                  <i className="bi bi-tools mr-2"></i>
+                  Veritabanını Kontrol Et
                 </Button>
               </div>
             </div>
@@ -375,6 +314,14 @@ const Dashboard = () => {
               title="Verileri yenile"
             >
               <i className="bi bi-arrow-clockwise"></i>
+            </Button>
+            <Button 
+              onClick={() => setShowVerification(true)} 
+              variant="ghost" 
+              size="sm"
+              title="Veritabanı durumunu kontrol et"
+            >
+              <i className="bi bi-database"></i>
             </Button>
           </div>
         </div>
