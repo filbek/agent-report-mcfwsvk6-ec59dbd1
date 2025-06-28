@@ -12,6 +12,7 @@ const Dashboard = () => {
   const [agents, setAgents] = useState([])
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
   const [selectedAgent, setSelectedAgent] = useState(null)
 
   const months = ['Mayıs', 'Haziran', 'Temmuz', 'Ağustos']
@@ -24,8 +25,9 @@ const Dashboard = () => {
   const fetchData = async () => {
     try {
       setLoading(true)
+      setError(null)
       
-      // Fetch agents
+      // Fetch agents with error handling
       const { data: agentsData, error: agentsError } = await supabase
         .from('agents')
         .select('*')
@@ -33,29 +35,86 @@ const Dashboard = () => {
 
       if (agentsError) {
         console.error('Error fetching agents:', agentsError)
+        setError('Agentler yüklenirken hata oluştu')
         setAgents([])
       } else {
         setAgents(agentsData || [])
       }
 
-      // Fetch reports
+      // Fetch reports with error handling
       const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
         .select('*')
 
       if (reportsError) {
         console.error('Error fetching reports:', reportsError)
+        setError('Raporlar yüklenirken hata oluştu')
         setReports([])
       } else {
         setReports(reportsData || [])
       }
     } catch (error) {
       console.error('Error in fetchData:', error)
+      setError('Veri yüklenirken beklenmeyen bir hata oluştu')
       setAgents([])
       setReports([])
     } finally {
       setLoading(false)
     }
+  }
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
+            <p className="text-secondary-600">Veriler yükleniyor...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
+        <Card>
+          <Card.Content>
+            <div className="text-center py-8">
+              <i className="bi bi-exclamation-triangle text-4xl text-warning-600 mb-4"></i>
+              <p className="text-secondary-600 mb-4">{error}</p>
+              <Button onClick={fetchData}>
+                <i className="bi bi-arrow-clockwise mr-2"></i>
+                Tekrar Dene
+              </Button>
+            </div>
+          </Card.Content>
+        </Card>
+      </div>
+    )
+  }
+
+  // Show empty state if no data
+  if (agents.length === 0) {
+    return (
+      <div className="space-y-6">
+        <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
+        <Card>
+          <Card.Content>
+            <div className="text-center py-8">
+              <i className="bi bi-inbox text-4xl text-secondary-400 mb-4"></i>
+              <p className="text-secondary-600 mb-4">Henüz agent verisi bulunmuyor</p>
+              <p className="text-sm text-secondary-500">Admin panelinden agent ekleyebilirsiniz</p>
+            </div>
+          </Card.Content>
+        </Card>
+      </div>
+    )
   }
 
   const filteredReports = reports.filter(report => {
@@ -137,14 +196,6 @@ const Dashboard = () => {
 
   const handleAgentClick = (agent) => {
     setSelectedAgent(agent)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600"></i>
-      </div>
-    )
   }
 
   return (
@@ -288,72 +339,78 @@ const Dashboard = () => {
         </Card.Content>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {chartData.length > 0 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <Card.Header>
+              <h3 className="text-lg font-semibold text-secondary-900">
+                Agent Satış Oranları
+              </h3>
+            </Card.Header>
+            <Card.Content>
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [`%${value}`, 'Satış Oranı']} />
+                  <Bar dataKey="sales_rate" fill="#3b82f6" />
+                </BarChart>
+              </ResponsiveContainer>
+            </Card.Content>
+          </Card>
+
+          {pieData.length > 0 && (
+            <Card>
+              <Card.Header>
+                <h3 className="text-lg font-semibold text-secondary-900">
+                  İletişim Dağılımı
+                </h3>
+              </Card.Header>
+              <Card.Content>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={80}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} %${(percent * 100).toFixed(0)}`}
+                    >
+                      {pieData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </Card.Content>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {chartData.length > 0 && (
         <Card>
           <Card.Header>
             <h3 className="text-lg font-semibold text-secondary-900">
-              Agent Satış Oranları
+              Aylık Randevu Trendi
             </h3>
           </Card.Header>
           <Card.Content>
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData}>
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" angle={-45} textAnchor="end" height={80} />
+                <XAxis dataKey="name" />
                 <YAxis />
-                <Tooltip formatter={(value) => [`%${value}`, 'Satış Oranı']} />
-                <Bar dataKey="sales_rate" fill="#3b82f6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card.Content>
-        </Card>
-
-        <Card>
-          <Card.Header>
-            <h3 className="text-lg font-semibold text-secondary-900">
-              İletişim Dağılımı
-            </h3>
-          </Card.Header>
-          <Card.Content>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={80}
-                  dataKey="value"
-                  label={({ name, percent }) => `${name} %${(percent * 100).toFixed(0)}`}
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
                 <Tooltip />
-              </PieChart>
+                <Line type="monotone" dataKey="appointments" stroke="#22c55e" strokeWidth={2} />
+              </LineChart>
             </ResponsiveContainer>
           </Card.Content>
         </Card>
-      </div>
-
-      <Card>
-        <Card.Header>
-          <h3 className="text-lg font-semibold text-secondary-900">
-            Aylık Randevu Trendi
-          </h3>
-        </Card.Header>
-        <Card.Content>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Line type="monotone" dataKey="appointments" stroke="#22c55e" strokeWidth={2} />
-            </LineChart>
-          </ResponsiveContainer>
-        </Card.Content>
-      </Card>
+      )}
 
       {selectedAgent && (
         <AgentProfile 
