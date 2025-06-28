@@ -17,18 +17,34 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let mounted = true
+
     const getSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
-        setUser(session?.user ?? null)
+        const { data: { session }, error } = await supabase.auth.getSession()
         
-        if (session?.user) {
-          await fetchProfile(session.user.id)
+        if (error) {
+          console.error('Error getting session:', error)
+          if (mounted) {
+            setLoading(false)
+          }
+          return
+        }
+
+        if (mounted) {
+          setUser(session?.user ?? null)
+          
+          if (session?.user) {
+            await fetchProfile(session.user.id)
+          } else {
+            setLoading(false)
+          }
         }
       } catch (error) {
-        console.error('Error getting session:', error)
-      } finally {
-        setLoading(false)
+        console.error('Error in getSession:', error)
+        if (mounted) {
+          setLoading(false)
+        }
       }
     }
 
@@ -36,59 +52,92 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (!mounted) return
+
         setUser(session?.user ?? null)
         
         if (session?.user) {
           await fetchProfile(session.user.id)
         } else {
           setProfile(null)
+          setLoading(false)
         }
-        
-        setLoading(false)
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const fetchProfile = async (userId) => {
     try {
+      // First check if profiles table exists and is accessible
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('user_id', userId)
-        .single()
+        .maybeSingle()
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         console.error('Error fetching profile:', error)
+        // If there's an error, create a default profile object
+        setProfile({
+          user_id: userId,
+          role: 'viewer',
+          full_name: ''
+        })
+        setLoading(false)
         return
       }
 
       if (!data) {
-        // Create default profile
-        const { data: newProfile, error: createError } = await supabase
-          .from('profiles')
-          .insert([
-            {
+        // Try to create a profile
+        try {
+          const { data: newProfile, error: createError } = await supabase
+            .from('profiles')
+            .insert([
+              {
+                user_id: userId,
+                role: 'viewer',
+                full_name: ''
+              }
+            ])
+            .select()
+            .single()
+
+          if (createError) {
+            console.error('Error creating profile:', createError)
+            // Fallback to default profile
+            setProfile({
               user_id: userId,
               role: 'viewer',
               full_name: ''
-            }
-          ])
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('Error creating profile:', createError)
-          return
+            })
+          } else {
+            setProfile(newProfile)
+          }
+        } catch (createErr) {
+          console.error('Error in profile creation:', createErr)
+          setProfile({
+            user_id: userId,
+            role: 'viewer',
+            full_name: ''
+          })
         }
-
-        setProfile(newProfile)
       } else {
         setProfile(data)
       }
     } catch (error) {
       console.error('Error in fetchProfile:', error)
+      setProfile({
+        user_id: userId,
+        role: 'viewer',
+        full_name: ''
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -100,18 +149,6 @@ export const AuthProvider = ({ children }) => {
       })
       
       if (error) throw error
-      
-      if (data.user) {
-        await supabase
-          .from('profiles')
-          .insert([
-            {
-              user_id: data.user.id,
-              role: 'viewer',
-              full_name: fullName || ''
-            }
-          ])
-      }
       
       return { data, error: null }
     } catch (error) {
