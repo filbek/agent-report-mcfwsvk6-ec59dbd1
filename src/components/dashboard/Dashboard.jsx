@@ -34,22 +34,26 @@ const Dashboard = () => {
     try {
       setLoading(true)
       setError(null)
-      setDebugInfo('Bağlantı test ediliyor...')
+      setDebugInfo('🔍 Bağlantı test ediliyor...')
       
-      // Enhanced connection test
+      console.log('🚀 Dashboard initialization started')
+      
+      // Enhanced connection test with detailed logging
       const connectionTest = await testConnection()
       if (!connectionTest.success) {
+        console.error('❌ Connection test failed:', connectionTest.error)
         setError(`Bağlantı hatası: ${connectionTest.error}`)
         setShowDiagnostics(true)
         setLoading(false)
         return
       }
-
-      setDebugInfo('Veriler yükleniyor...')
+      
+      console.log('✅ Connection test passed')
+      setDebugInfo('📊 Veriler yükleniyor...')
       await loadData()
       
     } catch (error) {
-      console.error('Dashboard initialization error:', error)
+      console.error('💥 Dashboard initialization error:', error)
       setError(`Başlatma hatası: ${error.message}`)
       setShowDiagnostics(true)
       setLoading(false)
@@ -58,53 +62,61 @@ const Dashboard = () => {
 
   const testConnection = async () => {
     try {
+      console.log('🔍 Testing Supabase connection...')
+      
+      // Test basic connection
       const { data, error } = await supabase
         .from('agents')
         .select('count')
         .limit(1)
 
       if (error) {
+        console.error('❌ Connection error:', error)
         return { success: false, error: error.message }
       }
 
+      console.log('✅ Connection successful')
       return { success: true, data }
     } catch (error) {
+      console.error('💥 Connection exception:', error)
       return { success: false, error: error.message }
     }
   }
 
   const loadData = async () => {
     try {
-      setDebugInfo('Agentler getiriliyor...')
+      setDebugInfo('👥 Agentler getiriliyor...')
+      console.log('📋 Loading agents...')
       
-      // Load agents with detailed error handling
+      // Load agents with enhanced error handling
       const { data: agentsData, error: agentsError, count: agentsCount } = await supabase
         .from('agents')
         .select('*', { count: 'exact' })
         .order('name')
 
       if (agentsError) {
-        console.error('Agents fetch error:', agentsError)
+        console.error('❌ Agents fetch error:', agentsError)
         throw new Error(`Agentler yüklenirken hata: ${agentsError.message}`)
       }
 
-      console.log('Agents loaded:', agentsCount, agentsData)
+      console.log('✅ Agents loaded:', agentsCount, agentsData)
       setAgents(agentsData || [])
 
-      setDebugInfo('Raporlar getiriliyor...')
+      setDebugInfo('📊 Raporlar getiriliyor...')
+      console.log('📈 Loading reports...')
 
-      // Load reports with detailed error handling
+      // Load reports with enhanced error handling
       const { data: reportsData, error: reportsError, count: reportsCount } = await supabase
         .from('reports')
         .select('*', { count: 'exact' })
         .order('date', { ascending: false })
 
       if (reportsError) {
-        console.error('Reports fetch error:', reportsError)
+        console.error('❌ Reports fetch error:', reportsError)
         throw new Error(`Raporlar yüklenirken hata: ${reportsError.message}`)
       }
 
-      console.log('Reports loaded:', reportsCount, reportsData)
+      console.log('✅ Reports loaded:', reportsCount, reportsData)
       setReports(reportsData || [])
 
       // Update status
@@ -114,20 +126,40 @@ const Dashboard = () => {
         lastUpdate: new Date()
       })
 
-      setDebugInfo(`Yükleme tamamlandı: ${agentsCount || 0} agent, ${reportsCount || 0} rapor`)
+      setDebugInfo(`✅ Yükleme tamamlandı: ${agentsCount || 0} agent, ${reportsCount || 0} rapor`)
       setError(null)
       setShowDiagnostics(false)
 
-      // Check if we have sufficient data
-      if ((agentsCount || 0) === 0 || (reportsCount || 0) === 0) {
+      // Enhanced data validation
+      if ((agentsCount || 0) === 0) {
+        console.warn('⚠️ No agents found in database')
         setShowDiagnostics(true)
-        setError('Yetersiz veri. Lütfen veritabanını kontrol edin.')
+        setError('Agent verisi bulunamadı. Veritabanını kontrol edin.')
+      } else if ((reportsCount || 0) === 0) {
+        console.warn('⚠️ No reports found in database')
+        setShowDiagnostics(true)
+        setError('Rapor verisi bulunamadı. Veritabanını kontrol edin.')
+      } else {
+        console.log('🎉 Data loading completed successfully')
+        
+        // Log sample data for debugging
+        console.log('📊 Sample agent:', agentsData?.[0])
+        console.log('📈 Sample report:', reportsData?.[0])
+        
+        // Verify data relationships
+        const agentIds = agentsData?.map(a => a.id) || []
+        const reportsWithValidAgents = reportsData?.filter(r => agentIds.includes(r.agent_id)) || []
+        console.log(`🔗 Reports with valid agents: ${reportsWithValidAgents.length}/${reportsCount}`)
+        
+        if (reportsWithValidAgents.length !== reportsCount) {
+          console.warn('⚠️ Some reports have invalid agent references')
+        }
       }
 
     } catch (error) {
-      console.error('Error loading data:', error)
+      console.error('💥 Error loading data:', error)
       setError(error.message)
-      setDebugInfo('Veri yükleme hatası')
+      setDebugInfo('❌ Veri yükleme hatası')
       setShowDiagnostics(true)
     } finally {
       setLoading(false)
@@ -135,10 +167,12 @@ const Dashboard = () => {
   }
 
   const handleRetry = async () => {
+    console.log('🔄 Retrying data load...')
     await initializeDashboard()
   }
 
   const forceRefresh = async () => {
+    console.log('🔄 Force refreshing data...')
     setAgents([])
     setReports([])
     setDataStatus({ agents: 0, reports: 0, lastUpdate: null })
@@ -146,6 +180,7 @@ const Dashboard = () => {
   }
 
   const handleDataReady = () => {
+    console.log('✅ Data ready callback triggered')
     setShowDiagnostics(false)
     initializeDashboard()
   }
@@ -246,15 +281,39 @@ const Dashboard = () => {
     )
   }
 
+  console.log('🎯 Rendering dashboard with data:', {
+    agents: agents.length,
+    reports: reports.length,
+    activeMonth,
+    activeCategory
+  })
+
   const filteredReports = reports.filter(report => {
     const agent = agents.find(a => a.id === report.agent_id)
-    return agent?.category === activeCategory && report.month === activeMonth
+    const matchesCategory = agent?.category === activeCategory
+    const matchesMonth = report.month === activeMonth
+    
+    console.log('🔍 Filtering report:', {
+      reportId: report.id,
+      agentName: agent?.name,
+      agentCategory: agent?.category,
+      reportMonth: report.month,
+      matchesCategory,
+      matchesMonth,
+      included: matchesCategory && matchesMonth
+    })
+    
+    return matchesCategory && matchesMonth
   })
+
+  console.log('📊 Filtered reports:', filteredReports.length, 'for', activeCategory, activeMonth)
 
   const aggregatedData = agents
     .filter(agent => agent.category === activeCategory)
     .map(agent => {
       const agentReports = filteredReports.filter(report => report.agent_id === agent.id)
+      console.log(`📈 Agent ${agent.name} reports:`, agentReports.length)
+      
       const totals = agentReports.reduce((acc, report) => ({
         incoming_data: acc.incoming_data + (report.incoming_data || 0),
         contacted: acc.contacted + (report.contacted || 0),
@@ -283,6 +342,8 @@ const Dashboard = () => {
         sales_rate: salesRate
       }
     })
+
+  console.log('📊 Aggregated data:', aggregatedData)
 
   const totalRow = aggregatedData.reduce((acc, agent) => ({
     incoming_data: acc.incoming_data + agent.incoming_data,
