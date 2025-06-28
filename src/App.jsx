@@ -14,7 +14,23 @@ const AppContent = () => {
   const { user, loading } = useAuth()
   const [activeTab, setActiveTab] = useState('dashboard')
 
-  if (loading) {
+  // Show loading for maximum 5 seconds, then show login form
+  const [showLogin, setShowLogin] = useState(false)
+  
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowLogin(true)
+    }, 5000)
+    
+    if (!loading) {
+      clearTimeout(timer)
+      setShowLogin(true)
+    }
+    
+    return () => clearTimeout(timer)
+  }, [loading])
+
+  if (loading && !showLogin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-secondary-50">
         <div className="text-center">
