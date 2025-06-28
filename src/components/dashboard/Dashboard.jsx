@@ -27,37 +27,52 @@ const Dashboard = () => {
       setLoading(true)
       setError(null)
       
-      // Fetch agents with error handling
+      console.log('Fetching data...')
+      
+      // Test database connection first
+      const { data: testData, error: testError } = await supabase
+        .from('agents')
+        .select('count')
+        .limit(1)
+
+      if (testError) {
+        console.error('Database connection test failed:', testError)
+        setError('Veritabanı bağlantısı kurulamadı')
+        setLoading(false)
+        return
+      }
+
+      console.log('Database connection successful')
+
+      // Fetch agents with simplified query
       const { data: agentsData, error: agentsError } = await supabase
         .from('agents')
         .select('*')
-        .eq('active', true)
 
       if (agentsError) {
         console.error('Error fetching agents:', agentsError)
-        setError('Agentler yüklenirken hata oluştu')
-        setAgents([])
+        setError('Agentler yüklenirken hata oluştu: ' + agentsError.message)
       } else {
+        console.log('Agents fetched:', agentsData?.length || 0)
         setAgents(agentsData || [])
       }
 
-      // Fetch reports with error handling
+      // Fetch reports with simplified query
       const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
         .select('*')
 
       if (reportsError) {
         console.error('Error fetching reports:', reportsError)
-        setError('Raporlar yüklenirken hata oluştu')
-        setReports([])
+        setError('Raporlar yüklenirken hata oluştu: ' + reportsError.message)
       } else {
+        console.log('Reports fetched:', reportsData?.length || 0)
         setReports(reportsData || [])
       }
+
     } catch (error) {
       console.error('Error in fetchData:', error)
-      setError('Veri yüklenirken beklenmeyen bir hata oluştu')
-      setAgents([])
-      setReports([])
+      setError('Beklenmeyen bir hata oluştu: ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -72,6 +87,14 @@ const Dashboard = () => {
           <div className="text-center">
             <i className="bi bi-arrow-clockwise animate-spin text-4xl text-primary-600 mb-4"></i>
             <p className="text-secondary-600">Veriler yükleniyor...</p>
+            <Button 
+              onClick={fetchData} 
+              variant="outline" 
+              size="sm" 
+              className="mt-4"
+            >
+              Yeniden Dene
+            </Button>
           </div>
         </div>
       </div>
@@ -109,7 +132,13 @@ const Dashboard = () => {
             <div className="text-center py-8">
               <i className="bi bi-inbox text-4xl text-secondary-400 mb-4"></i>
               <p className="text-secondary-600 mb-4">Henüz agent verisi bulunmuyor</p>
-              <p className="text-sm text-secondary-500">Admin panelinden agent ekleyebilirsiniz</p>
+              <p className="text-sm text-secondary-500 mb-4">
+                Agents: {agents.length}, Reports: {reports.length}
+              </p>
+              <Button onClick={fetchData}>
+                <i className="bi bi-arrow-clockwise mr-2"></i>
+                Verileri Yenile
+              </Button>
             </div>
           </Card.Content>
         </Card>
@@ -201,7 +230,12 @@ const Dashboard = () => {
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-secondary-900">Dashboard</h1>
+          <p className="text-sm text-secondary-600">
+            {agents.length} agent, {reports.length} rapor
+          </p>
+        </div>
         
         <div className="flex flex-wrap gap-2">
           {months.map(month => (
