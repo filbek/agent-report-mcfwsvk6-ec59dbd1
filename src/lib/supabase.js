@@ -3,34 +3,25 @@ import { createClient } from '@supabase/supabase-js'
 const supabaseUrl = 'https://eejmuwvwjehmpownslmq.supabase.co'
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVlam11d3Z3amVobXBvd25zbG1xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTEwOTMzNjQsImV4cCI6MjA2NjY2OTM2NH0.TPwz9qbLyAy25oy9E14nmjhdikMAnRhNmGzAfq4wAAA'
 
+// Simplified and more stable Supabase client configuration
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
-    detectSessionInUrl: false,
-    flowType: 'pkce'
-  },
-  db: {
-    schema: 'public'
-  },
-  global: {
-    headers: {
-      'x-my-custom-header': 'saglik-turizmi-admin',
-    },
-  },
+    detectSessionInUrl: false
+  }
 })
 
-// Enhanced connection test with detailed logging
+// Enhanced connection test with better error handling
 export const testSupabaseConnection = async () => {
   try {
     console.log('🔍 Testing Supabase connection...')
     console.log('📍 URL:', supabaseUrl)
-    console.log('🔑 Key length:', supabaseAnonKey.length)
     
-    // Test 1: Basic connection
+    // Simple connection test
     const { data, error } = await supabase
       .from('agents')
-      .select('count(*)')
+      .select('count')
       .limit(1)
     
     if (error) {
@@ -38,51 +29,28 @@ export const testSupabaseConnection = async () => {
       return { 
         success: false, 
         error: error.message,
-        details: error,
-        step: 'connection_test'
+        details: error
       }
     }
     
     console.log('✅ Connection test successful')
-    
-    // Test 2: Check table structure
-    const { data: tableInfo, error: tableError } = await supabase
-      .from('agents')
-      .select('*')
-      .limit(1)
-    
-    if (tableError) {
-      console.error('❌ Table structure test failed:', tableError)
-      return { 
-        success: false, 
-        error: tableError.message,
-        details: tableError,
-        step: 'table_structure'
-      }
-    }
-    
-    console.log('✅ Table structure test successful')
-    console.log('📊 Sample data:', tableInfo)
-    
     return { 
       success: true, 
       data,
-      tableInfo,
-      message: 'All connection tests passed'
+      message: 'Connection test passed'
     }
   } catch (error) {
     console.error('💥 Connection test exception:', error)
     return { 
       success: false, 
       error: error.message || 'Unknown connection error',
-      details: error,
-      step: 'exception'
+      details: error
     }
   }
 }
 
-// Enhanced query function with retry logic and better error handling
-export const safeQuery = async (queryFn, retries = 3, delay = 1000) => {
+// Simplified query function with better error handling
+export const safeQuery = async (queryFn, retries = 2) => {
   for (let i = 0; i < retries; i++) {
     try {
       console.log(`🔄 Query attempt ${i + 1}/${retries}`)
@@ -97,10 +65,8 @@ export const safeQuery = async (queryFn, retries = 3, delay = 1000) => {
         throw error
       }
       
-      // Progressive delay
-      const waitTime = delay * (i + 1)
-      console.log(`⏳ Waiting ${waitTime}ms before retry...`)
-      await new Promise(resolve => setTimeout(resolve, waitTime))
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
   }
 }
@@ -118,9 +84,9 @@ export const checkDatabaseHealth = async () => {
     
     // Check agents table
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('agents')
-        .select('count(*)')
+        .select('id')
         .limit(1)
       
       if (!error) {
@@ -135,9 +101,9 @@ export const checkDatabaseHealth = async () => {
     
     // Check reports table
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('reports')
-        .select('count(*)')
+        .select('id')
         .limit(1)
       
       if (!error) {
@@ -152,9 +118,9 @@ export const checkDatabaseHealth = async () => {
     
     // Check profiles table
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('profiles')
-        .select('count(*)')
+        .select('id')
         .limit(1)
       
       if (!error) {

@@ -34,21 +34,26 @@ const Dashboard = () => {
     try {
       setLoading(true)
       setError(null)
-      setDebugInfo('🔍 Bağlantı test ediliyor...')
+      setDebugInfo('🔍 Başlatılıyor...')
       
       console.log('🚀 Dashboard initialization started')
       
-      // Enhanced connection test with detailed logging
-      const connectionTest = await testConnection()
-      if (!connectionTest.success) {
-        console.error('❌ Connection test failed:', connectionTest.error)
-        setError(`Bağlantı hatası: ${connectionTest.error}`)
+      // Simple connection test
+      console.log('🔍 Testing connection...')
+      const { data: testData, error: testError } = await supabase
+        .from('agents')
+        .select('count')
+        .limit(1)
+
+      if (testError) {
+        console.error('❌ Connection failed:', testError)
+        setError(`Bağlantı hatası: ${testError.message}`)
         setShowDiagnostics(true)
         setLoading(false)
         return
       }
-      
-      console.log('✅ Connection test passed')
+
+      console.log('✅ Connection successful')
       setDebugInfo('📊 Veriler yükleniyor...')
       await loadData()
       
@@ -60,38 +65,15 @@ const Dashboard = () => {
     }
   }
 
-  const testConnection = async () => {
-    try {
-      console.log('🔍 Testing Supabase connection...')
-      
-      // Test basic connection
-      const { data, error } = await supabase
-        .from('agents')
-        .select('count')
-        .limit(1)
-
-      if (error) {
-        console.error('❌ Connection error:', error)
-        return { success: false, error: error.message }
-      }
-
-      console.log('✅ Connection successful')
-      return { success: true, data }
-    } catch (error) {
-      console.error('💥 Connection exception:', error)
-      return { success: false, error: error.message }
-    }
-  }
-
   const loadData = async () => {
     try {
-      setDebugInfo('👥 Agentler getiriliyor...')
+      setDebugInfo('👥 Agentler yükleniyor...')
       console.log('📋 Loading agents...')
       
-      // Load agents with enhanced error handling
-      const { data: agentsData, error: agentsError, count: agentsCount } = await supabase
+      // Load agents with simple query
+      const { data: agentsData, error: agentsError } = await supabase
         .from('agents')
-        .select('*', { count: 'exact' })
+        .select('*')
         .order('name')
 
       if (agentsError) {
@@ -99,16 +81,16 @@ const Dashboard = () => {
         throw new Error(`Agentler yüklenirken hata: ${agentsError.message}`)
       }
 
-      console.log('✅ Agents loaded:', agentsCount, agentsData)
+      console.log('✅ Agents loaded:', agentsData?.length || 0, agentsData)
       setAgents(agentsData || [])
 
-      setDebugInfo('📊 Raporlar getiriliyor...')
+      setDebugInfo('📊 Raporlar yükleniyor...')
       console.log('📈 Loading reports...')
 
-      // Load reports with enhanced error handling
-      const { data: reportsData, error: reportsError, count: reportsCount } = await supabase
+      // Load reports with simple query
+      const { data: reportsData, error: reportsError } = await supabase
         .from('reports')
-        .select('*', { count: 'exact' })
+        .select('*')
         .order('date', { ascending: false })
 
       if (reportsError) {
@@ -116,26 +98,29 @@ const Dashboard = () => {
         throw new Error(`Raporlar yüklenirken hata: ${reportsError.message}`)
       }
 
-      console.log('✅ Reports loaded:', reportsCount, reportsData)
+      console.log('✅ Reports loaded:', reportsData?.length || 0, reportsData)
       setReports(reportsData || [])
 
       // Update status
+      const agentsCount = agentsData?.length || 0
+      const reportsCount = reportsData?.length || 0
+      
       setDataStatus({
-        agents: agentsCount || 0,
-        reports: reportsCount || 0,
+        agents: agentsCount,
+        reports: reportsCount,
         lastUpdate: new Date()
       })
 
-      setDebugInfo(`✅ Yükleme tamamlandı: ${agentsCount || 0} agent, ${reportsCount || 0} rapor`)
+      setDebugInfo(`✅ Yükleme tamamlandı: ${agentsCount} agent, ${reportsCount} rapor`)
       setError(null)
       setShowDiagnostics(false)
 
       // Enhanced data validation
-      if ((agentsCount || 0) === 0) {
+      if (agentsCount === 0) {
         console.warn('⚠️ No agents found in database')
         setShowDiagnostics(true)
         setError('Agent verisi bulunamadı. Veritabanını kontrol edin.')
-      } else if ((reportsCount || 0) === 0) {
+      } else if (reportsCount === 0) {
         console.warn('⚠️ No reports found in database')
         setShowDiagnostics(true)
         setError('Rapor verisi bulunamadı. Veritabanını kontrol edin.')
